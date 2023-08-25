@@ -1,0 +1,133 @@
+Root <- Skip Comment? Rule (EOL Comment? Packet?)* EOF
+
+Rule <- Skip Packet (SEPT Packet)* COLON Skip Action (SEPT Action)*
+
+bin     <- [01]
+bin_    <- '_'? bin
+oct     <- [0-7]
+oct_    <- '_'? oct
+hex     <- [0-9a-fA-F]
+hex_    <- '_'? hex
+dec     <- [0-9]
+dec_    <- '_'? dec
+
+bin_int <- bin bin_*
+oct_int <- oct oct_*
+dec_int <- dec dec_*
+hex_int <- hex hex_*
+
+INTEGER <- "0b" bin_int Skip / "0o" oct_int Skip
+            / "0x" hex_int Skip / dec_int   Skip
+
+EQUAL           <- '=' Skip
+COLON           <- ':' Skip
+COMMA           <- ',' Skip
+SLASH           <- '/' Skip
+DOT             <- '.' Skip
+OR              <- '|' Skip
+Open            <- '(' Skip
+Close           <- ')' Skip
+Skip            <- ( Space / Comment )*
+Comment         <- '#' ( !EOL . )* EOL
+Space           <- ' ' / '\t' / EOL
+EOL             <- '\r\n' / '\n' / '\r' / '\0'
+EOF             <- !.
+
+Action          <- 'RSS'
+                   / 'DROP'
+                   / 'QUEUE'
+                   / 'PORT'
+                   / 'METER'
+                   / 'SAMPLE'  { YY_BPF(yy, (BPF_K|BPF_RET), 0, 0, 0x40000); YY_BPF(yy, BPF_K|BPF_RET, 0, 0, 0); }
+
+SEPT            <- SLASH / OR
+
+Packet          <- ETHER_P / IP_P / UDP_P / TCP_P / VXLAN_P / GRE_P / VLAN_P / MPLS_P / IP6_P / ANY_P / SCTP_P / ICMP_P / ARP_P / ICMP6_P
+
+VXLAN_FIELD     <- 'vni' / 'flags'
+IP6_FIELD       <- 'class' / 'frag' / 'ttl' / 'id' / 'proto'
+GRE_FIELD       <- 'proto' / 'csum' / 'key' / 'recur'
+MPLS_FIELD      <- 'label' / 'ttl'
+SCTP_FIELD      <- 'src' / 'dst' / 'type' / 'flags' / 'len' / 'csum' / 'tag'
+ICMP_FIELD      <- 'type' / 'code' / 'csum' / 'id' / 'seq'
+ICMP6_FIELD     <- 'type' / 'code' / 'csum'
+
+tcp_flags       <- 'syn' / 'fin' / 'rst' / 'ack' / 'push' / 'ece' / 'cwr' / 'urg'
+
+ETHER_P         <- 'ETHER' (Open (
+                    ('dst' EQUAL <macaddr (SLASH macaddr)?> COMMA?)         { YY_ETHER_MAC(yy, yytext, false); }
+                    / ('src' EQUAL <macaddr (SLASH macaddr)?> COMMA?)       { YY_ETHER_MAC(yy, yytext, true); }
+                    / ('type' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)      { YY_ETHER_TYPE(yy, yytext);}
+                    )* Close)?                                              { yy->offset += 14; }
+IP_P            <- 'IP' (Open (
+                    ('src' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)   { YY_IP_ADDR(yy, yytext, true); }
+                    / ('dst' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?) { YY_IP_ADDR(yy, yytext, false); }
+                    / ('tos' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          { YY_IP_FIELD(yy, yytext, 1, 1); }
+                    / ('len' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          { YY_IP_FIELD(yy, yytext, 2, 2); }
+                    / ('id' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           { YY_IP_FIELD(yy, yytext, 4, 2); }
+                    / ('frag' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)         { YY_IP_FIELD(yy, yytext, 6, 2); }
+                    / ('ttl' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          { YY_IP_FIELD(yy, yytext, 8, 1); }
+                    / ('proto' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_IP_FIELD(yy, yytext, 9, 1); }
+                    / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)         { YY_IP_FIELD(yy, yytext, 10, 2); }
+                    )* Close)?                                              { yy->offset += 20; }
+VXLAN_P         <- 'VXLAN' (Open (
+                    VXLAN_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?           { printf("666, %s\n", yytext);}
+                    )* Close)?
+UDP_P           <- 'UDP' (Open (
+                    ('src' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)             { YY_UDP_FIELD(yy, yytext, 0); }
+                    / ('dst' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           { YY_UDP_FIELD(yy, yytext, 2); }
+                    / ('len' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           { YY_UDP_FIELD(yy, yytext, 4); }
+                    / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          { YY_UDP_FIELD(yy, yytext, 6); }
+                    )* Close)?                                              { yy->offset += 8; }
+TCP_P           <- 'TCP' (Open (
+                    ('src' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)            { YY_TCP_FIELD(yy, yytext, 0, 2); }
+                    / ('dst' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          { YY_TCP_FIELD(yy, yytext, 2, 2); }
+                    / ('seq' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          { YY_TCP_FIELD(yy, yytext, 4, 4); }
+                    / ('ackseq' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)       { YY_TCP_FIELD(yy, yytext, 8, 4); }
+                    / ('doff' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)         { YY_TCP_FIELD(yy, yytext, 12, 1); }
+                    / ('win' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          { YY_TCP_FIELD(yy, yytext, 14, 2); }
+                    / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)         { YY_TCP_FIELD(yy, yytext, 16, 2); }
+                    / ('urgptr' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)       { YY_TCP_FIELD(yy, yytext, 18, 2); }
+                    / ('flags' EQUAL <tcp_flags (SEPT tcp_flags)*>)            { YY_TCP_FLAGS(yy, yytext); }
+                    )* Close)?                                               { yy->offset += 20; }
+VLAN_P          <- 'VLAN' (Open (
+                    'tpid' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?               { YY_VLAN_TPID(yy, yytext); }
+                    / 'tag' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?              { YY_VLAN_TAG(yy, yytext); }
+                    )* Close)?                                               { yy->offset += 4; }
+MPLS_P          <- 'MPLS' (Open (
+                    MPLS_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?
+                    )* Close)?
+GRE_P           <- 'GRE' (Open (
+                    GRE_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?
+                    )* Close)?
+IP6_P           <- "IP6" (Open (
+                    (('src' / 'dst') EQUAL <ip6addr (SLASH ipprefix)?> COMMA?)
+                    / (IP6_FIELD EQUAL INTEGER COMMA?)
+                    )* Close)?
+SCTP_P          <- "SCTP" (Open (
+                    SCTP_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?
+                    )* Close)?
+ICMP_P          <- "ICMP" (Open (
+                    ICMP_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?
+                    )* Close)?
+ARP_P           <- "ARP" (Open (
+                    ('sha' EQUAL <macaddr (SLASH macaddr)?> COMMA?)
+                    / ('spa' EQUAL <macaddr (SLASH macaddr)?> COMMA?)
+                    / ('tha' EQUAL <macaddr (SLASH macaddr)?> COMMA?)
+                    / ('tpa' EQUAL <macaddr (SLASH macaddr)?> COMMA?)
+                    / ("op" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    / ("hrd" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    / ("pro" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    / ("hlen" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    / ("plen" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    )* Close)?
+ICMP6_P         <- "ICMP6" (Open (
+                    (ICMP6_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    )* Close)?
+ANY_P           <- "ANY"
+
+macaddr         <- hex hex COLON hex hex COLON hex hex COLON hex hex COLON  hex hex COLON hex hex Skip
+ipaddr          <- dec_int DOT dec_int DOT dec_int DOT dec_int Skip
+ipprefix        <- dec_int
+group           <- hex (hex (hex hex?)?)?
+ip6addr         <- (group COLON group)* COLON group COLON group COLON group COLON group COLON group
