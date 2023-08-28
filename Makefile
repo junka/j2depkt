@@ -18,7 +18,7 @@ parser.c: parser.peg
 	peg -P $^ > $@
 
 depktcap.o: depktcap.c parser.c
-	$(CC) -c -o $@ depktcap.c $(CFLAGS)
+	$(CC) -c -o $@ depktcap.c $(CFLAGS) -Wall -O2
 
 libdepkt.a: $(OBJ)
 	$(AR) -rc $@ $(OBJ)
