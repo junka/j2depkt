@@ -1,37 +1,32 @@
-
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 #include <unistd.h>
 
-#include <sys/socket.h>
-#include <linux/if_ether.h>
 #include <arpa/inet.h>
+#include <linux/if_ether.h>
+#include <sys/socket.h>
 
 #include <pcap/bpf.h>
-#include <pcap/pcap.h>
-
 
 #define YY_CTX_LOCAL
 
-#define YY_CTX_MEMBERS \
-    struct bpf_program prog; \
-    unsigned long offset;
+#define YY_CTX_MEMBERS                                                         \
+  struct bpf_program prog;                                                     \
+  unsigned long offset;
 
 static uint32_t bpf_len = 1 << 4;
-static void
-bpf_append(struct bpf_program *bp, u_short code, u_char jt,
-                       u_char jf, uint32_t k)
-{
+static void bpf_append(struct bpf_program *bp, u_short code, u_char jt,
+                       u_char jf, uint32_t k) {
   struct bpf_insn ins = {
       .code = code,
       .jt = jt,
       .jf = jf,
       .k = k,
   };
-  bp->bf_len ++;
+  bp->bf_len++;
   if (bp->bf_len > bpf_len) {
     bpf_len <<= 1;
     bp->bf_insns = realloc(bp->bf_insns, bpf_len * sizeof(struct bpf_insn));
@@ -39,9 +34,8 @@ bpf_append(struct bpf_program *bp, u_short code, u_char jt,
   bp->bf_insns[bp->bf_len - 1] = ins;
 }
 
-void bpf_jmp_update(struct bpf_program *bp, uint8_t delt)
-{
-  for (int i = 0; i < bp->bf_len; i ++) {
+void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
+  for (int i = 0; i < bp->bf_len; i++) {
     if (bp->bf_insns[i].jf) {
       bp->bf_insns[i].jf += delt;
     }
@@ -79,8 +73,7 @@ static int macstr2addr(char *macstr, uint8_t addr[ETH_ALEN],
   return 0;
 }
 
-static int ipstr2addr(char *ipstr, uint32_t *ip, uint32_t *mask)
-{
+static int ipstr2addr(char *ipstr, uint32_t *ip, uint32_t *mask) {
   char *rest = NULL;
   char *ipCopy = strdup(ipstr);
   char *token = strtok_r(ipCopy, "/", &rest);
@@ -106,8 +99,7 @@ static int ipstr2addr(char *ipstr, uint32_t *ip, uint32_t *mask)
   return 0;
 }
 
-static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4])
-{
+static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
   char *rest = NULL;
   char *ipCopy = strdup(ipstr);
   char *token = strtok_r(ipCopy, "/", &rest);
@@ -247,7 +239,7 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4])
       bpf_jmp_update(&yy->prog, 3);                                            \
       YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset + off);          \
       YY_BPF(yy, (BPF_AND | BPF_K | BPF_ALU), 0, 0, mask);                     \
-      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, addr & mask);              \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, addr &mask);               \
     }                                                                          \
   }
 
@@ -384,14 +376,7 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4])
   }
 
 static const char *tcpflags[] = {
-  "fin",
-  "syn",
-  "rst",
-  "psh",
-  "ack",
-  "urg",
-  "ece",
-  "cwr",
+    "fin", "syn", "rst", "psh", "ack", "urg", "ece", "cwr",
 };
 
 #define YY_TCP_FLAGS(yy, yytext)                                               \
@@ -415,7 +400,7 @@ static const char *tcpflags[] = {
 void yyerror(yycontext *ctx, char *message) {
   fprintf(stderr, " %s", message);
 
-  if (ctx->__pos < ctx->__limit ) {
+  if (ctx->__pos < ctx->__limit) {
     // Find the offending line.
     int pos = ctx->__limit;
     while (ctx->__pos < pos) {
@@ -433,12 +418,9 @@ void yyerror(yycontext *ctx, char *message) {
   fprintf(stderr, "\n");
 }
 
-int main(int argc, char **argv)
+int depkt_compile(char *capstr, struct bpf_program *prog)
 {
-  char errbuf[PCAP_ERRBUF_SIZE];
-  pcap_t *hdl = NULL;
-
-  FILE *stream = fmemopen((void *)argv[1], strlen(argv[1]), "r");
+  FILE *stream = fmemopen((void *)capstr, strlen(capstr), "r");
   setbuf(stream, NULL);
   FILE *oristdin = stdin;
   stdin = stream;
@@ -448,35 +430,16 @@ int main(int argc, char **argv)
   ctx.prog.bf_insns = malloc(bpf_len * sizeof(struct bpf_insn));
   if (yyparse(&ctx) == 0) {
     yyerror(&ctx, "syntax error\n");
-    return 1;
+    stdin = oristdin;
+    fclose(stream);
+    return -1;
   }
   // recover the stream
   stdin = oristdin;
   fclose(stream);
+  prog->bf_len = ctx.prog.bf_len;
+  prog->bf_insns = ctx.prog.bf_insns;
 
-  if (argc > 2) {
-    hdl = pcap_open_live(argv[2], 100, 0, 1000, errbuf);
-    if (hdl == NULL) {
-      fprintf(stderr, "Couldn't open device %s: %s\n", argv[2], errbuf);
-      return -1;
-    }
-  }
-  bpf_dump(&ctx.prog, 2);
-  // we did not need pcap_compile, bpf_prog will be translated from our self defined DSL
-  if (pcap_setfilter(hdl, &ctx.prog) == -1) {
-    fprintf(stderr, "Couldn't install filter %s\n",
-            pcap_geterr(hdl));
-    pcap_close(hdl);
-    return 2;
-  }
-
-  struct pcap_pkthdr hdr;
-  const u_char *packet = pcap_next(hdl, &hdr);
-  printf("Capture a packet length %d, type 0x%x\n", hdr.len, packet[12] << 8 | packet[13]);
-
-  pcap_close(hdl);
-  pcap_freecode(&ctx.prog);
   YYRELEASE(&ctx);
-
   return 0;
 }
