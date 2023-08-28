@@ -20,10 +20,10 @@ INTEGER <- "0b" bin_int Skip / "0o" oct_int Skip
             / "0x" hex_int Skip / dec_int   Skip
 
 EQUAL           <- '=' Skip
-COLON           <- ':' Skip
+COLON           <- ':'
 COMMA           <- ',' Skip
 SLASH           <- '/' Skip
-DOT             <- '.' Skip
+DOT             <- '.'
 OR              <- '|' Skip
 Open            <- '(' Skip
 Close           <- ')' Skip
@@ -40,17 +40,9 @@ Action          <- 'RSS'
                    / 'METER'
                    / 'SAMPLE'  { YY_BPF(yy, (BPF_K|BPF_RET), 0, 0, 0x40000); YY_BPF(yy, BPF_K|BPF_RET, 0, 0, 0); }
 
-SEPT            <- SLASH / OR
+SEPT            <- SLASH Skip / OR
 
-Packet          <- ETHER_P / IP_P / UDP_P / TCP_P / VXLAN_P / GRE_P / VLAN_P / MPLS_P / IP6_P / ANY_P / SCTP_P / ICMP_P / ARP_P / ICMP6_P
-
-VXLAN_FIELD     <- 'vni' / 'flags'
-IP6_FIELD       <- 'class' / 'frag' / 'ttl' / 'id' / 'proto'
-GRE_FIELD       <- 'proto' / 'csum' / 'key' / 'recur'
-MPLS_FIELD      <- 'label' / 'ttl'
-SCTP_FIELD      <- 'src' / 'dst' / 'type' / 'flags' / 'len' / 'csum' / 'tag'
-ICMP_FIELD      <- 'type' / 'code' / 'csum' / 'id' / 'seq'
-ICMP6_FIELD     <- 'type' / 'code' / 'csum'
+Packet          <- ETHER_P / IP6_P / IP_P / UDP_P / TCP_P / VXLAN_P / GRE_P / VLAN_P / MPLS_P / ANY_P / SCTP_P / ICMP6_P / ICMP_P / ARP_P
 
 tcp_flags       <- 'syn' / 'fin' / 'rst' / 'ack' / 'push' / 'ece' / 'cwr' / 'urg'
 
@@ -71,8 +63,9 @@ IP_P            <- 'IP' (Open (
                     / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)         { YY_IP_FIELD(yy, yytext, 10, 2); }
                     )* Close)?                                              { yy->offset += 20; }
 VXLAN_P         <- 'VXLAN' (Open (
-                    VXLAN_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?           { printf("666, %s\n", yytext);}
-                    )* Close)?
+                    ('flags' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           { YY_VXLAN_FLAG(yy, yytext); }
+                    / ('vni' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           { YY_VXLAN_VNI(yy, yytext); }
+                    )* Close)?                                              { yy->offset += 8; }
 UDP_P           <- 'UDP' (Open (
                     ('src' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)             { YY_UDP_FIELD(yy, yytext, 0); }
                     / ('dst' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           { YY_UDP_FIELD(yy, yytext, 2); }
@@ -89,45 +82,81 @@ TCP_P           <- 'TCP' (Open (
                     / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)         { YY_TCP_FIELD(yy, yytext, 16, 2); }
                     / ('urgptr' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)       { YY_TCP_FIELD(yy, yytext, 18, 2); }
                     / ('flags' EQUAL <tcp_flags (SEPT tcp_flags)*>)            { YY_TCP_FLAGS(yy, yytext); }
-                    )* Close)?                                               { yy->offset += 20; }
+                    )* Close)?                                              { yy->offset += 20; }
 VLAN_P          <- 'VLAN' (Open (
                     'tpid' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?               { YY_VLAN_TPID(yy, yytext); }
                     / 'tag' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?              { YY_VLAN_TAG(yy, yytext); }
-                    )* Close)?                                               { yy->offset += 4; }
+                    )* Close)?                                              { yy->offset += 4; }
 MPLS_P          <- 'MPLS' (Open (
-                    MPLS_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?
+                    ('label' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    / ('ttl' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
                     )* Close)?
 GRE_P           <- 'GRE' (Open (
-                    GRE_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?
-                    )* Close)?
+                    ('proto' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           {}
+                    / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          {}
+                    / ('key' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           {}
+                    / ('recur' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)         {}
+                    )* Close)?                                          { yy->offset += 4; }
 IP6_P           <- "IP6" (Open (
-                    (('src' / 'dst') EQUAL <ip6addr (SLASH ipprefix)?> COMMA?)
-                    / (IP6_FIELD EQUAL INTEGER COMMA?)
-                    )* Close)?
+                    ('src' EQUAL <ip6addr (SLASH ip6prefix)?> COMMA?)             { YY_IP6_ADDR(yy, yytext, true);}
+                    / ('dst' EQUAL <ip6addr (SLASH ip6prefix)?> COMMA?)           { YY_IP6_ADDR(yy, yytext, false);}
+                    / ('version' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_IP6_FIELD(yy, yytext, "version"); }
+                    / ('traffic_class' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)  { YY_IP6_FIELD(yy, yytext, "traffic_class"); }
+                    / ('flowlabel' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)      { YY_IP6_FIELD(yy, yytext, "flowlabel"); }
+                    / ('plen' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           { YY_IP6_FIELD(yy, yytext, "plen"); }
+                    / ('nexthdr' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_IP6_FIELD(yy, yytext, "nexthdr"); }
+                    / ('hoplimit' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)       { YY_IP6_FIELD(yy, yytext, "hoplimit"); }
+                    )* Close)?                                          { yy->offset += 40; }
 SCTP_P          <- "SCTP" (Open (
-                    SCTP_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?
-                    )* Close)?
+                    ('src' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)         { YY_SCTP_FIELD(yy, yytext, 0, 2);}
+                    / ('dst' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)       { YY_SCTP_FIELD(yy, yytext, 2, 4);}
+                    / ('tag' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)       { YY_SCTP_FIELD(yy, yytext, 4, 4);}
+                    / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)      { YY_SCTP_FIELD(yy, yytext, 8, 4);}
+                    / ('type' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    / ('flag' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    / ('len' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    )* Close)?                                                  { yy->offset += 12; }
 ICMP_P          <- "ICMP" (Open (
-                    ICMP_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?
-                    )* Close)?
+                    ('type' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)                    { YY_ICMP_FIELD(yy, yytext, 0, 1); }
+                    / ('code'  EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)                 { YY_ICMP_FIELD(yy, yytext, 1, 1); }
+                    / ('csum'  EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)                 { YY_ICMP_FIELD(yy, yytext, 2, 2); }
+                    / ('id' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)                    { YY_ICMP_FIELD(yy, yytext, 4, 2); }
+                    / ('seq' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)                   { YY_ICMP_FIELD(yy, yytext, 6, 2); }
+                    )* Close)?                                                 { yy->offset += 8; }
 ARP_P           <- "ARP" (Open (
-                    ('sha' EQUAL <macaddr (SLASH macaddr)?> COMMA?)
-                    / ('spa' EQUAL <macaddr (SLASH macaddr)?> COMMA?)
-                    / ('tha' EQUAL <macaddr (SLASH macaddr)?> COMMA?)
-                    / ('tpa' EQUAL <macaddr (SLASH macaddr)?> COMMA?)
-                    / ("op" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
-                    / ("hrd" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
-                    / ("pro" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
-                    / ("hlen" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
-                    / ("plen" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
-                    )* Close)?
+                    ('sha' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)             { YY_ARP_ADDR(yy, yytext, 8); }
+                    / ('spa' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)           { YY_ARP_ADDR(yy, yytext, 12); }
+                    / ('tha' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)           { YY_ARP_ADDR(yy, yytext, 16); }
+                    / ('tpa' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)           { YY_ARP_ADDR(yy, yytext, 20); }
+                    / ("hrd" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)                      { YY_ARP_FIELD(yy, yytext, 0, 2); }
+                    / ("pro" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)                      { YY_ARP_FIELD(yy, yytext, 2, 2); }
+                    / ("hlen" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)                     { YY_ARP_FIELD(yy, yytext, 4, 1); }
+                    / ("plen" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)                     { YY_ARP_FIELD(yy, yytext, 5, 1); }
+                    / ("opcode" EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)                   { YY_ARP_FIELD(yy, yytext, 6, 2); }
+                    )* Close)?                                                 { yy->offset += 24; }
 ICMP6_P         <- "ICMP6" (Open (
-                    (ICMP6_FIELD EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    ('type' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    / ('code' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
                     )* Close)?
-ANY_P           <- "ANY"
+ANY_P           <- "ANY" (Open (
+                    ('off' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    / ('size' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    / ('value' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
+                    )* Close)?
 
-macaddr         <- hex hex COLON hex hex COLON hex hex COLON hex hex COLON  hex hex COLON hex hex Skip
-ipaddr          <- dec_int DOT dec_int DOT dec_int DOT dec_int Skip
-ipprefix        <- dec_int
+macaddr         <- hex hex COLON hex hex COLON hex hex COLON hex hex COLON hex hex COLON hex hex Skip
+ipaddr          <- ip4seg DOT ip4seg DOT ip4seg DOT ip4seg Skip
+ip4seg          <- '25'[0-5] / '2'[0-4][0-9] / '1'[0-9][0-9] / [1-9][0-9] / [0-9]
+ipprefix        <- ('3'[0-2] / [1-2][0-9] / [0-9]) Skip
 group           <- hex (hex (hex hex?)?)?
-ip6addr         <- (group COLON group)* COLON group COLON group COLON group COLON group COLON group
+ip6addr         <- (group COLON group COLON group COLON group COLON group COLON group COLON group COLON group Skip)
+                    / (COLON COLON group (COLON group (COLON group (COLON group (COLON group (COLON group (COLON group)?)?)?)?)?)? Skip)
+                    / (group COLON COLON group (COLON group (COLON group (COLON group (COLON group (COLON group)?)?)?)?)? Skip)
+                    / (group (COLON group)? COLON COLON group (COLON group (COLON group (COLON group (COLON group)?)?)?)? Skip)
+                    / (group (COLON group (COLON group)?)? COLON COLON group (COLON group (COLON group (COLON group)?)?)? Skip)
+                    / (group (COLON group (COLON group (COLON group)?)?)? COLON COLON group (COLON group (COLON group)?)? Skip)
+                    / (group (COLON group (COLON group (COLON group (COLON group)?)?)?)? COLON COLON group (COLON group)? Skip)
+                    / (group (COLON group (COLON group (COLON group (COLON group (COLON group)?)?)?)?)? COLON COLON group Skip)
+                    / (group (COLON group (COLON group (COLON group (COLON group (COLON group (COLON group)?)?)?)?)?)? COLON COLON Skip)
+ip6prefix       <- ('12'[0-8] / '1'[0-1][0-9] / [1-9][0-9] / [0-9]) Skip

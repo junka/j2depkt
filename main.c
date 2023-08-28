@@ -81,23 +81,69 @@ static int macstr2addr(char *macstr, uint8_t addr[ETH_ALEN],
 
 static int ipstr2addr(char *ipstr, uint32_t *ip, uint32_t *mask)
 {
-  char *rest;
+  char *rest = NULL;
   char *ipCopy = strdup(ipstr);
   char *token = strtok_r(ipCopy, "/", &rest);
 
   inet_pton(AF_INET, token, ip);
   *ip = htonl(*ip);
   *mask = 0xFFFFFFFF;
-  if (rest) {
+  if (rest && strlen(rest)) {
     if (strstr(rest, ".")) {
-      printf("%s\n", rest);
       inet_pton(AF_INET, rest, mask);
       *mask = htonl(*mask);
-      printf("%x\n", *mask);
     } else {
       *mask = strtoul(rest, NULL, 10);
-      *mask = ~(0xFFFFFFFF >> *mask);
-      printf("%x\n", *mask);
+      if (*mask < 32) {
+        *mask = ~(0xFFFFFFFF >> *mask);
+      } else {
+        *mask = 0xFFFFFFFF;
+      }
+    }
+  }
+
+  free(ipCopy);
+  return 0;
+}
+
+static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4])
+{
+  char *rest = NULL;
+  char *ipCopy = strdup(ipstr);
+  char *token = strtok_r(ipCopy, "/", &rest);
+
+  inet_pton(AF_INET6, token, ip);
+  ip[0] = htonl(ip[0]);
+  ip[1] = htonl(ip[1]);
+  ip[2] = htonl(ip[2]);
+  ip[3] = htonl(ip[3]);
+  memset(mask, 0xFF, 4 * sizeof(uint32_t));
+  if (rest && strlen(rest)) {
+    if (strstr(rest, ":")) {
+      inet_pton(AF_INET6, rest, mask);
+      mask[0] = htonl(mask[0]);
+      mask[1] = htonl(mask[1]);
+      mask[2] = htonl(mask[2]);
+      mask[3] = htonl(mask[3]);
+    } else {
+      mask[3] = strtoul(rest, NULL, 10);
+      if (mask[3] < 32) {
+        mask[0] = ~(0xFFFFFFFF >> mask[3]);
+        mask[1] = 0;
+        mask[2] = 0;
+        mask[3] = 0;
+      } else if (mask[3] < 64) {
+        mask[1] = ~(0xFFFFFFFF >> (mask[3] - 32));
+        mask[2] = 0;
+        mask[3] = 0;
+      } else if (mask[3] < 96) {
+        mask[2] = ~(0xFFFFFFFF >> (mask[3] - 64));
+        mask[3] = 0;
+      } else if (mask[3] < 128) {
+        mask[3] = ~(0xFFFFFFFF >> (mask[3] - 96));
+      } else if (mask[3] == 128) {
+        mask[3] = 0xFFFFFFFF;
+      }
     }
   }
 
@@ -116,7 +162,7 @@ static int ipstr2addr(char *ipstr, uint32_t *ip, uint32_t *mask)
   {                                                                            \
     bpf_jmp_update(&yy->prog, 3);                                              \
     YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset + 2);              \
-    YY_BPF(yy, (BPF_ABS | BPF_AND | BPF_ALU), 0, 0, 0x0FFF);                   \
+    YY_BPF(yy, (BPF_AND | BPF_K | BPF_ALU), 0, 0, 0x0FFF);                     \
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));      \
   }
 
@@ -155,7 +201,7 @@ static int ipstr2addr(char *ipstr, uint32_t *ip, uint32_t *mask)
       bpf_jmp_update(&yy->prog, 3);                                            \
       YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0,                             \
              yy->offset + 12 + (src ? 0 : 4));                                 \
-      YY_BPF(yy, (BPF_AND | BPF_W | BPF_ALU), 0, 0, mask);                     \
+      YY_BPF(yy, (BPF_AND | BPF_K | BPF_ALU), 0, 0, mask);                     \
       YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, addr &mask);               \
     }                                                                          \
   }
@@ -182,11 +228,159 @@ static int ipstr2addr(char *ipstr, uint32_t *ip, uint32_t *mask)
   {                                                                            \
     bpf_jmp_update(&yy->prog, 2);                                              \
     if (size == 4) {                                                           \
-      YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset + off);          \
+      YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset + off);          \
     } else if (size == 2) {                                                    \
-      YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0, yy->offset + off);          \
+      YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset + off);          \
     }                                                                          \
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));      \
+  }
+
+#define YY_ARP_ADDR(yy, yytext, off)                                           \
+  {                                                                            \
+    uint32_t addr, mask;                                                       \
+    ipstr2addr(yytext, &addr, &mask);                                          \
+    if (mask == 0xFFFFFFFF) {                                                  \
+      bpf_jmp_update(&yy->prog, 2);                                            \
+      YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset + off);          \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, addr);                     \
+    } else {                                                                   \
+      bpf_jmp_update(&yy->prog, 3);                                            \
+      YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset + off);          \
+      YY_BPF(yy, (BPF_AND | BPF_K | BPF_ALU), 0, 0, mask);                     \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, addr & mask);              \
+    }                                                                          \
+  }
+
+#define YY_ARP_FIELD(yy, yytext, off, size)                                    \
+  {                                                                            \
+    bpf_jmp_update(&yy->prog, 2);                                              \
+    if (size == 1) {                                                           \
+      YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0, yy->offset + off);          \
+    } else if (size == 2) {                                                    \
+      YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset + off);          \
+    }                                                                          \
+    YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));      \
+  }
+
+#define YY_VXLAN_FLAG(yy, yytext)                                              \
+  {                                                                            \
+    bpf_jmp_update(&yy->prog, 2);                                              \
+    YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0, yy->offset);                  \
+    YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 16));      \
+  }
+
+#define YY_VXLAN_VNI(yy, yytext)                                               \
+  {                                                                            \
+    bpf_jmp_update(&yy->prog, 4);                                              \
+    YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset + 4);              \
+    YY_BPF(yy, (BPF_AND | BPF_K | BPF_ALU), 0, 0, 0xFFF0);                     \
+    YY_BPF(yy, (BPF_RSH | BPF_K | BPF_ALU), 0, 0, 8);                          \
+    YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 16));      \
+  }
+
+#define YY_ANY_FIELD(yy, yytext, off, size)                                    \
+  {                                                                            \
+    bpf_jmp_update(&yy->prog, 2);                                              \
+    YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset + off);            \
+    YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 16));      \
+  }
+
+#define YY_ICMP_FIELD(yy, yytext, off, size)                                   \
+  {                                                                            \
+    bpf_jmp_update(&yy->prog, 2);                                              \
+    if (size == 1) {                                                           \
+      YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0, yy->offset + off);          \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));    \
+    } else if (size == 2) {                                                    \
+      YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset + off);          \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));    \
+    }                                                                          \
+  }
+
+#define YY_SCTP_FIELD(yy, yytext, off, size)                                   \
+  {                                                                            \
+    bpf_jmp_update(&yy->prog, 2);                                              \
+    if (size == 4) {                                                           \
+      YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset + off);          \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));    \
+    } else if (size == 2) {                                                    \
+      YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset + off);          \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));    \
+    }                                                                          \
+  }
+
+#define YY_IP6_ADDR(yy, yytext, src)                                           \
+  {                                                                            \
+    uint32_t addr[4], mask[4];                                                 \
+    ip6str2addr(yytext, addr, mask);                                           \
+    int prefix = __builtin_popcount(mask[0]) + __builtin_popcount(mask[1]) +   \
+                 __builtin_popcount(mask[2]) + __builtin_popcount(mask[3]);    \
+    bpf_jmp_update(&yy->prog, 2 * ((prefix ? prefix - 1 : 0) / 32) + 2);       \
+    YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0,                               \
+           yy->offset + 8 + (src ? 0 : 16));                                   \
+    YY_BPF(yy,                                                                 \
+           (prefix >= 32) ? (BPF_JEQ | BPF_K | BPF_JMP)                        \
+                          : (BPF_JSET | BPF_K | BPF_JMP),                      \
+           prefix >= 32 ? 0 : ((prefix - 1) / 32) * 2 + 1,                     \
+           prefix >= 32 ? ((prefix - 1) / 32) * 2 + 1 : 0, addr[0] & mask[0]); \
+    if (prefix > 32) {                                                         \
+      YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0,                             \
+             yy->offset + 8 + (src ? 4 : 20));                                 \
+      YY_BPF(yy,                                                               \
+             (prefix >= 64) ? (BPF_JEQ | BPF_K | BPF_JMP)                      \
+                            : (BPF_JSET | BPF_K | BPF_JMP),                    \
+             prefix >= 64 ? 0 : ((prefix - 1) / 32 - 1) * 2 + 1,               \
+             prefix >= 64 ? ((prefix - 1) / 32 - 1) * 2 + 1 : 0,               \
+             addr[1] & mask[1]);                                               \
+    }                                                                          \
+    if (prefix > 64) {                                                         \
+      YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0,                             \
+             yy->offset + 8 + (src ? 8 : 24));                                 \
+      YY_BPF(yy,                                                               \
+             (prefix >= 96) ? (BPF_JEQ | BPF_K | BPF_JMP)                      \
+                            : (BPF_JSET | BPF_K | BPF_JMP),                    \
+             prefix >= 96 ? 0 : ((prefix - 1) / 32 - 2) * 2 + 1,               \
+             prefix >= 96 ? ((prefix - 1) / 32 - 2) * 2 + 1 : 0,               \
+             addr[2] & mask[2]);                                               \
+    }                                                                          \
+    if (prefix > 96) {                                                         \
+      YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0,                             \
+             yy->offset + 8 + (src ? 12 : 28));                                \
+      YY_BPF(yy,                                                               \
+             (prefix == 128) ? (BPF_JEQ | BPF_K | BPF_JMP)                     \
+                             : (BPF_JSET | BPF_K | BPF_JMP),                   \
+             (prefix == 128) ? 0 : 1, (prefix == 128) ? 1 : 0,                 \
+             addr[3] & mask[3]);                                               \
+    }                                                                          \
+  }
+
+#define YY_IP6_FIELD(yy, yytext, name)                                         \
+  {                                                                            \
+    bpf_jmp_update(&yy->prog, 2);                                              \
+    if (!strcmp(name, "version")) {                                            \
+      YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0, yy->offset);                \
+      YY_BPF(yy, (BPF_AND | BPF_K | BPF_ALU), 0, 0, 0xF);                      \
+      YY_BPF(yy, (BPF_RSH | BPF_K | BPF_ALU), 0, 0, 4);                        \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));    \
+    } else if (!strcmp(name, "traffic_class")) {                               \
+      YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset);                \
+      YY_BPF(yy, (BPF_AND | BPF_K | BPF_ALU), 0, 0, 0xFF0);                    \
+      YY_BPF(yy, (BPF_RSH | BPF_K | BPF_ALU), 0, 0, 4);                        \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));    \
+    } else if (!strcmp(name, "flowlabel")) {                                   \
+      YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset);                \
+      YY_BPF(yy, (BPF_AND | BPF_K | BPF_ALU), 0, 0, 0xFFFFF);                  \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));    \
+    } else if (!strcmp(name, "plen")) {                                        \
+      YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset + 4);            \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));    \
+    } else if (!strcmp(yytext, "nexthdr")) {                                   \
+      YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0, yy->offset + 6);            \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));    \
+    } else if (!strcmp(name, "hoplimit")) {                                    \
+      YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0, yy->offset + 7);            \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, strtol(yytext, 0, 10));    \
+    }                                                                          \
   }
 
 static const char *tcpflags[] = {
@@ -278,7 +472,7 @@ int main(int argc, char **argv)
 
   struct pcap_pkthdr hdr;
   const u_char *packet = pcap_next(hdl, &hdr);
-  // printf("Capture a packet length %d, type 0x%x\n", hdr.len, packet[12] << 8 | packet[13]);
+  printf("Capture a packet length %d, type 0x%x\n", hdr.len, packet[12] << 8 | packet[13]);
 
   pcap_close(hdl);
   pcap_freecode(&ctx.prog);
