@@ -6,7 +6,7 @@
 
 #include <pcap/pcap.h>
 
-#include "../../depktcap.c"
+#include "depktcap.h"
 
 
 int main(int argc, char **argv)

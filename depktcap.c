@@ -9,13 +9,20 @@
 #include <linux/if_ether.h>
 #include <sys/socket.h>
 
-#include <pcap/bpf.h>
+#include "depktcap.h"
 
 #define YY_CTX_LOCAL
 
+#define YY_INPUT(ctx, buf, result, max)                                        \
+  {                                                                            \
+    int c = fgetc(ctx->stream);                                                \
+    result = (EOF == c) ? 0 : (*(buf) = c, 1);                                 \
+  }
+
 #define YY_CTX_MEMBERS                                                         \
   struct bpf_program prog;                                                     \
-  unsigned long offset;
+  unsigned long offset;                                                        \
+  FILE *stream;
 
 static uint32_t bpf_len = 1 << 4;
 static void bpf_append(struct bpf_program *bp, u_short code, u_char jt,
@@ -395,7 +402,7 @@ static const char *tcpflags[] = {
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, flag);                       \
   }
 
-#include "build/parser.c"
+#include "parser.c"
 
 void yyerror(yycontext *ctx, char *message) {
   fprintf(stderr, " %s", message);
@@ -420,26 +427,21 @@ void yyerror(yycontext *ctx, char *message) {
 
 int depkt_compile(char *capstr, struct bpf_program *prog)
 {
-  FILE *stream = fmemopen((void *)capstr, strlen(capstr), "r");
-  setbuf(stream, NULL);
-  FILE *oristdin = stdin;
-  stdin = stream;
-
+  printf("%s\n", capstr);
   yycontext ctx;
   memset(&ctx, 0, sizeof(yycontext));
+  FILE *stream = fmemopen(capstr, strlen(capstr), "r");
+  ctx.stream = stream;
   ctx.prog.bf_insns = malloc(bpf_len * sizeof(struct bpf_insn));
   if (yyparse(&ctx) == 0) {
     yyerror(&ctx, "syntax error\n");
-    stdin = oristdin;
-    fclose(stream);
     return -1;
   }
-  // recover the stream
-  stdin = oristdin;
   fclose(stream);
+
   prog->bf_len = ctx.prog.bf_len;
   prog->bf_insns = ctx.prog.bf_insns;
-
   YYRELEASE(&ctx);
+
   return 0;
 }
