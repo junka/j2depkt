@@ -53,7 +53,8 @@ Action          <- 'RSS'
 
 SEPT            <- SLASH Skip / OR
 
-Packet          <- ETHER_P / IP6_P / IP_P / UDP_P / TCP_P / VXLAN_P / GRE_P / VLAN_P / MPLS_P / ANY_P / SCTP_P / ICMP6_P / ICMP_P / ARP_P
+Packet          <- ETHER_P / IP6_P / IP_P / UDP_P / TCP_P / VXLAN_P / GRE_P / VLAN_P / MPLS_P 
+                   / ANY_P / SCTP_P / ICMP6_P / ICMP_P / ARP_P / OSPF_P / GENEVE_P
 
 tcp_flags       <- 'syn' / 'fin' / 'rst' / 'ack' / 'push' / 'ece' / 'cwr' / 'urg'
 
@@ -65,18 +66,25 @@ ETHER_P         <- 'ETHER' (Open (
 IP_P            <- 'IP' (Open (
                     ('src' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)   { YY_IP_ADDR(yy, yytext, true); }
                     / ('dst' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?) { YY_IP_ADDR(yy, yytext, false); }
-                    / ('tos' EQUAL <bits8 (SLASH bits8)?> COMMA?)            { YY_IP_FIELD(yy, yytext, 1, 1); }
-                    / ('len' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_IP_FIELD(yy, yytext, 2, 2); }
-                    / ('id' EQUAL <bits16 (SLASH bits16)?> COMMA?)           { YY_IP_FIELD(yy, yytext, 4, 2); }
-                    / ('frag' EQUAL <bits16 (SLASH bits16)?> COMMA?)         { YY_IP_FIELD(yy, yytext, 6, 2); }
-                    / ('ttl' EQUAL <bits8 (SLASH bits8)?> COMMA?)            { YY_IP_FIELD(yy, yytext, 8, 1); }
-                    / ('proto' EQUAL <bits8 (SLASH bits8)?> COMMA?)          { YY_IP_FIELD(yy, yytext, 9, 1); }
-                    / ('csum' EQUAL <bits16 (SLASH bits16)?> COMMA?)         { YY_IP_FIELD(yy, yytext, 10, 2); }
+                    / ('tos' EQUAL <bits8 (SLASH bits8)?> COMMA?)            { YY_IP_FIELD1(yy, yytext, 1); }
+                    / ('len' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_IP_FIELD2(yy, yytext, 2); }
+                    / ('id' EQUAL <bits16 (SLASH bits16)?> COMMA?)           { YY_IP_FIELD2(yy, yytext, 4); }
+                    / ('frag' EQUAL <bits16 (SLASH bits16)?> COMMA?)         { YY_IP_FIELD2(yy, yytext, 6); }
+                    / ('ttl' EQUAL <bits8 (SLASH bits8)?> COMMA?)            { YY_IP_FIELD1(yy, yytext, 8); }
+                    / ('proto' EQUAL <bits8 (SLASH bits8)?> COMMA?)          { YY_IP_FIELD1(yy, yytext, 9); }
+                    / ('csum' EQUAL <bits16 (SLASH bits16)?> COMMA?)         { YY_IP_FIELD2(yy, yytext, 10); }
                     )* Close)?                                               { yy->offset += 20; }
 VXLAN_P         <- 'VXLAN' (Open (
                     ('flags' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_VXLAN_FLAG(yy, yytext); }
                     / ('vni' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_VXLAN_VNI(yy, yytext); }
                     )* Close)?                                               { yy->offset += 8; }
+
+GENEVE_P        <- 'GENEVE' (Open (
+                    ('ver' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          { YY_VXLAN_VER(yy, yytext); }
+                    / ('optlen' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)     { YY_GENEVE_OPTLEN(yy, yytext); __ = integervalue(yytext); }
+                    / ('proto' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)      { YY_GENEVE_PROTO(yy, yytext); }
+                    / ('vni' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_GENEVE_VNI(yy, yytext); }
+                    )* Close)?                                               { yy->offset += (8 + __); __ = 0;}
 UDP_P           <- 'UDP' (Open (
                     ('src' EQUAL <bits16 (SLASH bits16)?> COMMA?)            { YY_UDP_FIELD(yy, yytext, 0); }
                     / ('dst' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_UDP_FIELD(yy, yytext, 2); }
@@ -84,14 +92,14 @@ UDP_P           <- 'UDP' (Open (
                     / ('csum' EQUAL <bits16 (SLASH bits16)?> COMMA?)         { YY_UDP_FIELD(yy, yytext, 6); }
                     )* Close)?                                               { yy->offset += 8; }
 TCP_P           <- 'TCP' (Open (
-                    ('src' EQUAL <bits16 (SLASH bits16)?> COMMA?)            { YY_TCP_FIELD(yy, yytext, 0, 2); }
-                    / ('dst' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_TCP_FIELD(yy, yytext, 2, 2); }
-                    / ('seq' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_TCP_FIELD(yy, yytext, 4, 4); }
-                    / ('ackseq' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)     { YY_TCP_FIELD(yy, yytext, 8, 4); }
-                    / ('doff' EQUAL <bits8 (SLASH bits8)?> COMMA?)           { YY_TCP_FIELD(yy, yytext, 12, 1); }
-                    / ('win' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_TCP_FIELD(yy, yytext, 14, 2); }
-                    / ('csum' EQUAL <bits16 (SLASH bits16)?> COMMA?)         { YY_TCP_FIELD(yy, yytext, 16, 2); }
-                    / ('urgptr' EQUAL <bits16 (SLASH bits16)?> COMMA?)       { YY_TCP_FIELD(yy, yytext, 18, 2); }
+                    ('src' EQUAL <bits16 (SLASH bits16)?> COMMA?)            { YY_TCP_FIELD2(yy, yytext, 0); }
+                    / ('dst' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_TCP_FIELD2(yy, yytext, 2); }
+                    / ('seq' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_TCP_FIELD4(yy, yytext, 4); }
+                    / ('ackseq' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)     { YY_TCP_FIELD4(yy, yytext, 8); }
+                    / ('doff' EQUAL <bits8 (SLASH bits8)?> COMMA?)           { YY_TCP_FIELD2(yy, yytext, 12); }
+                    / ('win' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_TCP_FIELD2(yy, yytext, 14); }
+                    / ('csum' EQUAL <bits16 (SLASH bits16)?> COMMA?)         { YY_TCP_FIELD2(yy, yytext, 16); }
+                    / ('urgptr' EQUAL <bits16 (SLASH bits16)?> COMMA?)       { YY_TCP_FIELD2(yy, yytext, 18); }
                     / ('flags' EQUAL <tcp_flags (SEPT tcp_flags)*>)          { YY_TCP_FLAGS(yy, yytext); }
                     )* Close)?                                               { yy->offset += 20; }
 VLAN_P          <- 'VLAN' (Open (
@@ -99,58 +107,71 @@ VLAN_P          <- 'VLAN' (Open (
                     / 'tag' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?          { YY_VLAN_TAG(yy, yytext); }
                     )* Close)?                                               { yy->offset += 4; }
 MPLS_P          <- 'MPLS' (Open (
-                    ('label' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
-                    / ('ttl' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
-                    )* Close)?
+                    ('label' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_MPLS_LABEL(yy, yytext); }
+                    / ('exp' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_MPLS_EXP(yy, yytext); }
+                    / ('s' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          { YY_MPLS_S(yy, yytext); }
+                    / ('ttl' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_MPLS_TTL(yy, yytext); }
+                    )* Close)?                                               { yy->offset += 4; }
 GRE_P           <- 'GRE' (Open (
-                    ('proto' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           {}
-                    / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          {}
-                    / ('key' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           {}
-                    / ('recur' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)         {}
-                    )* Close)?                                          { yy->offset += 4; }
+                    / ('C' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           { YY_GRE_C(yy, yytext); }
+                    / ('ver' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)         { YY_GRE_VER(yy, yytext);}
+                    / ('proto' EQUAL <bits16 (SLASH bits16)?> COMMA?)         { YY_GRE_PROTO(yy, yytext);}
+                    / ('csum' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_GRE_CSUM(yy, yytext); __ = 4;}
+                    )* Close)?                                               { yy->offset += (4 + __); __ = 0; }
 IP6_P           <- "IP6" (Open (
-                    ('src' EQUAL <ip6addr (SLASH ip6prefix)?> COMMA?)             { YY_IP6_ADDR(yy, yytext, true);}
-                    / ('dst' EQUAL <ip6addr (SLASH ip6prefix)?> COMMA?)           { YY_IP6_ADDR(yy, yytext, false);}
+                    ('src' EQUAL <ip6addr (SLASH ip6prefix)?> COMMA?)            { YY_IP6_ADDR(yy, yytext, true);}
+                    / ('dst' EQUAL <ip6addr (SLASH ip6prefix)?> COMMA?)          { YY_IP6_ADDR(yy, yytext, false);}
                     / ('version' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_IP6_FIELD(yy, yytext, "version"); }
                     / ('traffic_class' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)  { YY_IP6_FIELD(yy, yytext, "traffic_class"); }
                     / ('flowlabel' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)      { YY_IP6_FIELD(yy, yytext, "flowlabel"); }
-                    / ('plen' EQUAL <bits16 (SLASH bits16)?> COMMA?)           { YY_IP6_FIELD(yy, yytext, "plen"); }
-                    / ('nexthdr' EQUAL <bits8 (SLASH bits8)?> COMMA?)        { YY_IP6_FIELD(yy, yytext, "nexthdr"); }
-                    / ('hoplimit' EQUAL <bits8 (SLASH bits8)?> COMMA?)       { YY_IP6_FIELD(yy, yytext, "hoplimit"); }
-                    )* Close)?                                          { yy->offset += 40; }
+                    / ('plen' EQUAL <bits16 (SLASH bits16)?> COMMA?)             { YY_IP6_FIELD(yy, yytext, "plen"); }
+                    / ('nexthdr' EQUAL <bits8 (SLASH bits8)?> COMMA?)            { YY_IP6_FIELD(yy, yytext, "nexthdr"); }
+                    / ('hoplimit' EQUAL <bits8 (SLASH bits8)?> COMMA?)           { YY_IP6_FIELD(yy, yytext, "hoplimit"); }
+                    )* Close)?                                               { yy->offset += 40; }
 SCTP_P          <- "SCTP" (Open (
-                    ('src' EQUAL <bits16 (SLASH bits16)?> COMMA?)         { YY_SCTP_FIELD(yy, yytext, 0, 2);}
-                    / ('dst' EQUAL <bits16 (SLASH bits16)?> COMMA?)       { YY_SCTP_FIELD(yy, yytext, 2, 2);}
-                    / ('tag' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)       { YY_SCTP_FIELD(yy, yytext, 4, 4);}
-                    / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)      { YY_SCTP_FIELD(yy, yytext, 8, 4);}
+                    ('src' EQUAL <bits16 (SLASH bits16)?> COMMA?)         { YY_SCTP_FIELD2(yy, yytext, 0);}
+                    / ('dst' EQUAL <bits16 (SLASH bits16)?> COMMA?)       { YY_SCTP_FIELD2(yy, yytext, 2);}
+                    / ('tag' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)       { YY_SCTP_FIELD4(yy, yytext, 4);}
+                    / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)      { YY_SCTP_FIELD4(yy, yytext, 8);}
                     / ('type' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
                     / ('flag' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
-                    / ('len' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
-                    )* Close)?                                                  { yy->offset += 12; }
+                    / ('len' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { __ += integervalue(yytext) + 4; }
+                    )* Close)?                                               { yy->offset += (12 + __); __ = 0;}
 ICMP_P          <- "ICMP" (Open (
-                    ('type' EQUAL <bits8 (SLASH bits8)?> COMMA?)                    { YY_ICMP_FIELD(yy, yytext, 0, 1); }
-                    / ('code'  EQUAL <bits8 (SLASH bits8)?> COMMA?)                 { YY_ICMP_FIELD(yy, yytext, 1, 1); }
-                    / ('csum'  EQUAL <bits16 (SLASH bits16)?> COMMA?)                 { YY_ICMP_FIELD(yy, yytext, 2, 2); }
-                    / ('id' EQUAL <bits16 (SLASH bits16)?> COMMA?)                    { YY_ICMP_FIELD(yy, yytext, 4, 2); }
-                    / ('seq' EQUAL <bits16 (SLASH bits16)?> COMMA?)                   { YY_ICMP_FIELD(yy, yytext, 6, 2); }
+                    ('type' EQUAL <bits8 (SLASH bits8)?> COMMA?)                    { YY_ICMP_FIELD1(yy, yytext, 0); }
+                    / ('code'  EQUAL <bits8 (SLASH bits8)?> COMMA?)                 { YY_ICMP_FIELD1(yy, yytext, 1); }
+                    / ('csum'  EQUAL <bits16 (SLASH bits16)?> COMMA?)                 { YY_ICMP_FIELD2(yy, yytext, 2); }
+                    / ('id' EQUAL <bits16 (SLASH bits16)?> COMMA?)                    { YY_ICMP_FIELD2(yy, yytext, 4); }
+                    / ('seq' EQUAL <bits16 (SLASH bits16)?> COMMA?)                   { YY_ICMP_FIELD2(yy, yytext, 6); }
                     )* Close)?                                                 { yy->offset += 8; }
 ARP_P           <- "ARP" (Open (
                     ('sha' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)             { YY_ARP_ADDR(yy, yytext, 8); }
                     / ('spa' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)           { YY_ARP_ADDR(yy, yytext, 12); }
                     / ('tha' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)           { YY_ARP_ADDR(yy, yytext, 16); }
                     / ('tpa' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)           { YY_ARP_ADDR(yy, yytext, 20); }
-                    / ("hrd" EQUAL <bits16 (SLASH bits16)?> COMMA?)                      { YY_ARP_FIELD(yy, yytext, 0, 2); }
-                    / ("pro" EQUAL <bits16 (SLASH bits16)?> COMMA?)                      { YY_ARP_FIELD(yy, yytext, 2, 2); }
-                    / ("hlen" EQUAL <bits8 (SLASH bits8)?> COMMA?)                     { YY_ARP_FIELD(yy, yytext, 4, 1); }
-                    / ("plen" EQUAL <bits8 (SLASH bits8)?> COMMA?)                     { YY_ARP_FIELD(yy, yytext, 5, 1); }
-                    / ("opcode" EQUAL <bits16 (SLASH bits16)?> COMMA?)                   { YY_ARP_FIELD(yy, yytext, 6, 2); }
+                    / ("hrd" EQUAL <bits16 (SLASH bits16)?> COMMA?)                      { YY_ARP_FIELD2(yy, yytext, 0); }
+                    / ("pro" EQUAL <bits16 (SLASH bits16)?> COMMA?)                      { YY_ARP_FIELD2(yy, yytext, 2); }
+                    / ("hlen" EQUAL <bits8 (SLASH bits8)?> COMMA?)                     { YY_ARP_FIELD1(yy, yytext, 4); }
+                    / ("plen" EQUAL <bits8 (SLASH bits8)?> COMMA?)                     { YY_ARP_FIELD1(yy, yytext, 5); }
+                    / ("opcode" EQUAL <bits16 (SLASH bits16)?> COMMA?)                   { YY_ARP_FIELD2(yy, yytext, 6); }
                     )* Close)?                                                 { yy->offset += 24; }
 ICMP6_P         <- "ICMP6" (Open (
-                    ('type' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)                { YY_ICMP_FIELD(yy, yytext, 0, 1);}
-                    / ('code' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)              { YY_ICMP_FIELD(yy, yytext, 1, 1);}
-                    / ('csum' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)              { YY_ICMP_FIELD(yy, yytext, 2, 2);}
-                    / ()
+                    ('type' EQUAL <bits8 (SLASH bits8)?> COMMA?)                { YY_ICMP6_FIELD1(yy, yytext, 0);}
+                    / ('code' EQUAL <bits8 (SLASH bits8)?> COMMA?)              { YY_ICMP6_FIELD1(yy, yytext, 1);}
+                    / ('csum' EQUAL <bits16 (SLASH bits16)?> COMMA?)            { YY_ICMP6_FIELD2(yy, yytext, 2);}
+                    / ('id' EQUAL <bits16 (SLASH bits16)?> COMMA?)              { YY_ICMP6_FIELD2(yy, yytext, 4);}
+                    / ('seq' EQUAL <bits16 (SLASH bits16)?> COMMA?)             { YY_ICMP6_FIELD2(yy, yytext, 6);}
                     )* Close)?
+OSPF_P          <- "OSPF" (Open (
+                    ('version' EQUAL <bits8 (SLASH bits8)?> COMMA?)             { YY_OSPF_FIELD1(yy, yytext, 0); }
+                    / ('type' EQUAL <bits8 (SLASH bits8)?> COMMA?)              { YY_OSPF_FIELD1(yy, yytext, 1); }
+                    / ('plen' EQUAL <bits16 (SLASH bits16)?> COMMA?)            { YY_OSPF_FIELD2(yy, yytext, 2); }
+                    / ('rid' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)           { YY_OSPF_FIELD4(yy, yytext, 4); }
+                    / ('area' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          { YY_OSPF_FIELD4(yy, yytext, 8); }
+                    / ('csum' EQUAL <bits16 (SLASH bits16)?> COMMA?)            { YY_OSPF_FIELD2(yy, yytext, 12); }
+                    / ('autype' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_OSPF_FIELD2(yy, yytext, 14); }
+                    / ('auth' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)          { YY_OSPF_AUTH(yy, yytext); }
+                    )* Close)?                                                  { yy->offset += 24; }
 ANY_P           <- "ANY" (Open (
                     ('off' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
                     / ('size' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
