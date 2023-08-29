@@ -1,6 +1,6 @@
 
 
-OBJ = depktcap.o
+OBJ = depktcap.o utils.o
 CFLAGS += -fPIC
 
 
@@ -20,5 +20,12 @@ parser.c: parser.peg
 depktcap.o: depktcap.c parser.c
 	$(CC) -c -o $@ depktcap.c $(CFLAGS) -Wall -O2
 
+utils.o: utils.c
+	$(CC) -c -o $@ utils.c $(CFLAGS) -Wall -O2
+
+dpdkrflow.o: dpdkrflow.c parser.c
+	$(CC) -c -o $@ dpdkrflow.c $(CFLAGS) -Wall -O2
+
 libdepkt.a: $(OBJ)
 	$(AR) -rc $@ $(OBJ)
+

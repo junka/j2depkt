@@ -5,11 +5,9 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <arpa/inet.h>
-#include <linux/if_ether.h>
-#include <sys/socket.h>
 
 #include "depktcap.h"
+#include "utils.h"
 
 #define YY_CTX_LOCAL
 
@@ -56,119 +54,6 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
 #define YY_BPF(yy, code, jt, jf, k)                                            \
   { bpf_append(&yy->prog, code, jt, jf, k); }
 
-
-uint32_t integervalue(const char *intstr)
-{
-  if (strlen(intstr) > 1 && intstr[0] == '0') {
-    if (intstr[1] == 'x' || intstr[1] == 'X') {
-      return strtoul(intstr, 0, 16);
-    } else if (intstr[1] == 'o') {
-      return strtoul(intstr, 0, 8);
-    } else if (intstr[1] == 'b') {
-      return strtoul(intstr, 0, 2);
-    } else {
-      return strtoul(intstr, 0, 10);
-    }
-  }
-  return strtoul(intstr, 0, 10);
-}
-
-
-static int macstr2addr(char *macstr, uint8_t addr[ETH_ALEN],
-                       uint8_t mask[ETH_ALEN]) {
-  char *token = NULL;
-  char *rest = NULL;
-  char *macCopy = strdup(macstr);
-  char *maskstr = NULL;
-  token = strtok_r(macCopy, "/", &rest);
-
-  if (rest && strlen(rest) > 0) {
-    for (int i = ETH_ALEN - 1; i >= 0; i--) {
-      maskstr = strtok_r(rest, ":", &rest);
-      sscanf(maskstr, "%hhx", &mask[i]);
-    }
-  }
-
-  rest = token;
-  for (int i = ETH_ALEN - 1; i >= 0; i--) {
-    token = strtok_r(rest, ":", &rest);
-    sscanf(token, "%hhx", &addr[i]);
-  }
-
-  free(macCopy);
-  return 0;
-}
-
-static int ipstr2addr(char *ipstr, uint32_t *ip, uint32_t *mask) {
-  char *rest = NULL;
-  char *ipCopy = strdup(ipstr);
-  char *token = strtok_r(ipCopy, "/", &rest);
-
-  inet_pton(AF_INET, token, ip);
-  *ip = htonl(*ip);
-  *mask = 0xFFFFFFFF;
-  if (rest && strlen(rest)) {
-    if (strstr(rest, ".")) {
-      inet_pton(AF_INET, rest, mask);
-      *mask = htonl(*mask);
-    } else {
-      *mask = integervalue(rest);
-      if (*mask < 32) {
-        *mask = ~(0xFFFFFFFF >> *mask);
-      } else {
-        *mask = 0xFFFFFFFF;
-      }
-    }
-  }
-
-  free(ipCopy);
-  return 0;
-}
-
-static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
-  char *rest = NULL;
-  char *ipCopy = strdup(ipstr);
-  char *token = strtok_r(ipCopy, "/", &rest);
-
-  inet_pton(AF_INET6, token, ip);
-  ip[0] = htonl(ip[0]);
-  ip[1] = htonl(ip[1]);
-  ip[2] = htonl(ip[2]);
-  ip[3] = htonl(ip[3]);
-  memset(mask, 0xFF, 4 * sizeof(uint32_t));
-  if (rest && strlen(rest)) {
-    if (strstr(rest, ":")) {
-      inet_pton(AF_INET6, rest, mask);
-      mask[0] = htonl(mask[0]);
-      mask[1] = htonl(mask[1]);
-      mask[2] = htonl(mask[2]);
-      mask[3] = htonl(mask[3]);
-    } else {
-      mask[3] = integervalue(rest);
-      if (mask[3] < 32) {
-        mask[0] = ~(0xFFFFFFFF >> mask[3]);
-        mask[1] = 0;
-        mask[2] = 0;
-        mask[3] = 0;
-      } else if (mask[3] < 64) {
-        mask[1] = ~(0xFFFFFFFF >> (mask[3] - 32));
-        mask[2] = 0;
-        mask[3] = 0;
-      } else if (mask[3] < 96) {
-        mask[2] = ~(0xFFFFFFFF >> (mask[3] - 64));
-        mask[3] = 0;
-      } else if (mask[3] < 128) {
-        mask[3] = ~(0xFFFFFFFF >> (mask[3] - 96));
-      } else if (mask[3] == 128) {
-        mask[3] = 0xFFFFFFFF;
-      }
-    }
-  }
-
-  free(ipCopy);
-  return 0;
-}
-
 #define YY_BITS32_VALUE(yy, yytext, offset)                                    \
   {                                                                            \
     bpf_jmp_update(&yy->prog, 2);                                              \
@@ -190,8 +75,8 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
   }
 
+#define YY_VLAN_START(yy)
 #define YY_VLAN_TPID(yy, yytext) YY_BITS16_VALUE(yy, yytext, yy->offset)
-
 #define YY_VLAN_TAG(yy, yytext)                                                \
   {                                                                            \
     bpf_jmp_update(&yy->prog, 3);                                              \
@@ -199,7 +84,9 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
     YY_BPF(yy, (BPF_AND | BPF_K | BPF_ALU), 0, 0, 0x0FFF);                     \
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
   }
+#define YY_VLAN_END(yy) yy->offset += 4;
 
+#define YY_ETHER_START(yy)
 #define YY_ETHER_MAC(yy, yytext, src)                                          \
   {                                                                            \
     unsigned char addr[ETH_ALEN];                                              \
@@ -216,6 +103,9 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
   }
 
 #define YY_ETHER_TYPE(yy, yytext) YY_BITS16_VALUE(yy, yytext, yy->offset+12)
+#define YY_ETHER_END(yy) yy->offset += 14;
+
+#define YY_IP_START(yy)
 
 #define YY_IP_ADDR(yy, yytext, src)                                            \
   {                                                                            \
@@ -240,16 +130,21 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
 #define YY_IP_FIELD1(yy, yytext, off)                                          \
   YY_BITS8_VALUE(yy, yytext, yy->offset + off)
 
+#define YY_IP_END(yy) yy->offset += 20
+
+#define YY_UDP_START(yy)
 #define YY_UDP_FIELD(yy, yytext, off)                                          \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
+#define YY_UDP_END(yy) yy->offset += 8;
 
+#define YY_TCP_START(yy)
 #define YY_TCP_FIELD2(yy, yytext, off)                                         \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
-
 #define YY_TCP_FIELD4(yy, yytext, off)                                         \
   YY_BITS32_VALUE(yy, yytext, yy->offset + off)
+#define YY_TCP_END(yy) yy->offset += 20
 
-
+#define YY_ARP_START(yy)
 #define YY_ARP_ADDR(yy, yytext, off)                                           \
   {                                                                            \
     uint32_t addr, mask;                                                       \
@@ -265,12 +160,13 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
       YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, addr &mask);               \
     }                                                                          \
   }
-
 #define YY_ARP_FIELD1(yy, yytext, off)                                         \
   YY_BITS8_VALUE(yy, yytext, yy->offset + off)
 #define YY_ARP_FIELD2(yy, yytext, off)                                         \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
+#define YY_ARP_END(yy) yy->offset += 24
 
+#define YY_VXLAN_START(yy)
 #define YY_VXLAN_FLAG(yy, yytext)                                              \
   {                                                                            \
     bpf_jmp_update(&yy->prog, 2);                                              \
@@ -286,7 +182,9 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
     YY_BPF(yy, (BPF_RSH | BPF_K | BPF_ALU), 0, 0, 8);                          \
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
   }
+#define YY_VXLAN_END(yy) yy->offset += 8
 
+#define YY_GENEVE_START(yy)
 #define YY_GENEVE_VER(yy, yytext)                                              \
   {                                                                            \
     bpf_jmp_update(&yy->prog, 4);                                              \
@@ -301,9 +199,15 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
     YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0, yy->offset);                  \
     YY_BPF(yy, (BPF_AND | BPF_K | BPF_ALU), 0, 0, 0x3F);                       \
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
+    __ = integervalue(yytext);                                                 \
   }
 #define YY_GENEVE_PROTO(yy, yytext) YY_BITS16_VALUE(yy, yytext, yy->offset + 2)
 #define YY_GENEVE_VNI(yy, yytext) YY_VXLAN_VNI(yy, yytext)
+#define YY_GENEVE_END(yy)                                                      \
+  {                                                                            \
+    yy->offset += (8 + __);                                                    \
+    __ = 0;                                                                    \
+  }
 
 #define YY_ANY_FIELD(yy, yytext, off, size)                                    \
   {                                                                            \
@@ -312,21 +216,30 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
   }
 
+#define YY_ICMP_START(yy)
 #define YY_ICMP_FIELD1(yy, yytext, off)                                        \
   YY_BITS8_VALUE(yy, yytext, yy->offset + off)
 
 #define YY_ICMP_FIELD2(yy, yytext, off)                                        \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
+#define YY_ICMP_END(yy) yy->offset += 8
 
+#define YY_ICMP6_START(yy)
 #define YY_ICMP6_FIELD1(yy, yytext, off) YY_ICMP_FIELD1(yy, yytext, off)
 #define YY_ICMP6_FIELD2(yy, yytext, off) YY_ICMP_FIELD2(yy, yytext, off)
+#define YY_ICMP6_END(yy) yy->offset += 8
 
+#define YY_SCTP_START(yy)
 #define YY_SCTP_FIELD2(yy, yytext, off)                                        \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
 
 #define YY_SCTP_FIELD4(yy, yytext, off)                                        \
   YY_BITS32_VALUE(yy, yytext, yy->offset + off)
+#define YY_SCTP_END(yy)                                                        \
+  yy->offset += (12 + __);                                                     \
+  __ = 0;
 
+#define YY_MPLS_START(yy)
 #define YY_MPLS_LABEL(yy, yytext)                                              \
   {                                                                            \
     bpf_jmp_update(&yy->prog, 4);                                              \
@@ -354,7 +267,9 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
   }
 #define YY_MPLS_TTL(yy, yytext)                                                \
   YY_BITS8_VALUE(yy, yytext, yy->offset + 3)
+#define YY_MPLS_END(yy) yy->offset += 4;
 
+#define YY_GRE_START(yy)
 #define YY_GRE_C(yy, yytext)                                                   \
   {                                                                            \
     bpf_jmp_update(&yy->prog, 4);                                              \
@@ -382,8 +297,13 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 3, 0x80);                       \
     YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset + 4);              \
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
+    __ = 4;                                                                   \
   }
+#define YY_GRE_END(yy)                                                         \
+  yy->offset += (4 + __);                                                      \
+  __ = 0;
 
+#define YY_IP6_START(yy)
 #define YY_IP6_ADDR(yy, yytext, src)                                           \
   {                                                                            \
     uint32_t addr[4], mask[4];                                                 \
@@ -461,7 +381,9 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
       YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));     \
     }                                                                          \
   }
+#define YY_IP6_END(yy) yy->offset += 40
 
+#define YY_OSPF_START(yy)
 #define YY_OSPF_FIELD1(yy, yytext, off)                                        \
   YY_BITS8_VALUE(yy, yytext, yy->offset + off)
 #define YY_OSPF_FIELD2(yy, yytext, off)                                        \
@@ -477,6 +399,7 @@ static int ip6str2addr(char *ipstr, uint32_t ip[4], uint32_t mask[4]) {
     YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset + 20);             \
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
   }
+#define YY_OSPF_END(yy) yy->offset += 24;
 
 static const char *tcpflags[] = {
     "fin", "syn", "rst", "psh", "ack", "urg", "ece", "cwr",
