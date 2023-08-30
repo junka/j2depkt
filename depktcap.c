@@ -138,6 +138,8 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
 #define YY_UDP_END(yy) yy->offset += 8;
 
 #define YY_TCP_START(yy)
+#define YY_TCP_FIELD1(yy, yytext, off)                                         \
+  YY_BITS8_VALUE(yy, yytext, yy->offset + off)
 #define YY_TCP_FIELD2(yy, yytext, off)                                         \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
 #define YY_TCP_FIELD4(yy, yytext, off)                                         \
@@ -160,11 +162,23 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
       YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, addr &mask);               \
     }                                                                          \
   }
+#define YY_ARP_MAC(yy, yytext, off)                                            \
+  {                                                                            \
+    unsigned char addr[ETH_ALEN];                                              \
+    unsigned char mask[ETH_ALEN];                                              \
+    macstr2addr(yytext, addr, mask);                                           \
+    bpf_jmp_update(&yy->prog, 4);                                              \
+    YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset + 2 + off);        \
+    YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 3,                              \
+           (addr[0] | addr[1] << 8 | addr[2] << 16 | addr[3] << 24));          \
+    YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset + off);            \
+    YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, (addr[4] | addr[5] << 8));   \
+  }
 #define YY_ARP_FIELD1(yy, yytext, off)                                         \
   YY_BITS8_VALUE(yy, yytext, yy->offset + off)
 #define YY_ARP_FIELD2(yy, yytext, off)                                         \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
-#define YY_ARP_END(yy) yy->offset += 24
+#define YY_ARP_END(yy) yy->offset += 28
 
 #define YY_VXLAN_START(yy)
 #define YY_VXLAN_FLAG(yy, yytext)                                              \
@@ -421,11 +435,16 @@ static const char *tcpflags[] = {
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, flag);                       \
   }
 
+#define YY_RSS(yy, yytext)
+#define YY_QUEUE(yy, yytext)
+#define YY_DROP(yy)
+#define YY_PORT(yy)
 #define YY_SAMPLE(yy)                                                          \
   {                                                                            \
     YY_BPF(yy, (BPF_K | BPF_RET), 0, 0, 0x40000);                              \
     YY_BPF(yy, BPF_K | BPF_RET, 0, 0, 0);                                      \
   }
+
 
 #include "parser.c"
 

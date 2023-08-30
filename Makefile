@@ -1,13 +1,13 @@
 
 
 OBJ = depktcap.o utils.o
+OBJ_DPDK = dpdkrflow.o utils.o
 CFLAGS += -fPIC
 
 
 .PHONY: all clean
 
-all: libdepkt.a
-
+all: libdepkt.a libdepkt_dpdk.a
 
 
 clean:
@@ -29,3 +29,5 @@ dpdkrflow.o: dpdkrflow.c parser.c
 libdepkt.a: $(OBJ)
 	$(AR) -rc $@ $(OBJ)
 
+libdepkt_dpdk.a: $(OBJ_DPDK)
+	$(AR) -rc $@ $(OBJ_DPDK)

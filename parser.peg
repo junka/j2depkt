@@ -44,12 +44,12 @@ Space           <- ' ' / '\t' / EOL
 EOL             <- '\r\n' / '\n' / '\r' / '\0'
 EOF             <- !.
 
-Action          <- 'RSS'
-                   / 'DROP'
-                   / 'QUEUE'
-                   / 'PORT'
+Action          <- 'RSS' (Open ( 'queue' EQUAL <bits8 (SLASH bits8)?> Close? )* Close)?    { YY_RSS(yy, yytext); }
+                   / 'DROP'     { YY_DROP(yy); }
+                   / 'QUEUE' (Open ( 'id' EQUAL <bits8 (SLASH bits8)?> Close? )* Close)?   { YY_QUEUE(yy, yytext); }
+                   / 'PORT'     { YY_PORT(yy); }
                    / 'METER'
-                   / 'SAMPLE'  { YY_SAMPLE(yy); }
+                   / 'SAMPLE'   { YY_SAMPLE(yy); }
 
 SEPT            <- SLASH Skip / OR
 
@@ -95,7 +95,7 @@ TCP_P           <- 'TCP' (Open (                                             { Y
                     / ('dst' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_TCP_FIELD2(yy, yytext, 2); }
                     / ('seq' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)        { YY_TCP_FIELD4(yy, yytext, 4); }
                     / ('ackseq' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)     { YY_TCP_FIELD4(yy, yytext, 8); }
-                    / ('doff' EQUAL <bits8 (SLASH bits8)?> COMMA?)           { YY_TCP_FIELD2(yy, yytext, 12); }
+                    / ('doff' EQUAL <bits8 (SLASH bits8)?> COMMA?)           { YY_TCP_FIELD1(yy, yytext, 12); }
                     / ('win' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_TCP_FIELD2(yy, yytext, 14); }
                     / ('csum' EQUAL <bits16 (SLASH bits16)?> COMMA?)         { YY_TCP_FIELD2(yy, yytext, 16); }
                     / ('urgptr' EQUAL <bits16 (SLASH bits16)?> COMMA?)       { YY_TCP_FIELD2(yy, yytext, 18); }
@@ -144,10 +144,10 @@ ICMP_P          <- "ICMP" (Open (                                            { Y
                     / ('seq' EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_ICMP_FIELD2(yy, yytext, 6); }
                     )* Close)?                                               { YY_ICMP_END(yy); }
 ARP_P           <- "ARP" (Open (                                             { YY_ARP_START(yy); }
-                    ('sha' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)    { YY_ARP_ADDR(yy, yytext, 8); }
-                    / ('spa' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)  { YY_ARP_ADDR(yy, yytext, 12); }
-                    / ('tha' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)  { YY_ARP_ADDR(yy, yytext, 16); }
-                    / ('tpa' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)  { YY_ARP_ADDR(yy, yytext, 20); }
+                    ('sha' EQUAL <macaddr (SLASH (macaddr))?> COMMA?)        { YY_ARP_MAC(yy, yytext, 8); }
+                    / ('spa' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)  { YY_ARP_ADDR(yy, yytext, 14); }
+                    / ('tha' EQUAL <macaddr (SLASH (macaddr))?> COMMA?)      { YY_ARP_MAC(yy, yytext, 18); }
+                    / ('tpa' EQUAL <ipaddr (SLASH (ipaddr / ipprefix))?> COMMA?)  { YY_ARP_ADDR(yy, yytext, 24); }
                     / ("hrd" EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_ARP_FIELD2(yy, yytext, 0); }
                     / ("pro" EQUAL <bits16 (SLASH bits16)?> COMMA?)          { YY_ARP_FIELD2(yy, yytext, 2); }
                     / ("hlen" EQUAL <bits8 (SLASH bits8)?> COMMA?)           { YY_ARP_FIELD1(yy, yytext, 4); }
