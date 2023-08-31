@@ -20,9 +20,8 @@ add_subdirectory(example/pcapfilter)
 add_subdirectory(example/tcpdump)
 add_subdirectory(example/dpdkflow)
 
-add_test(parser validation)
-
-enable_testing()
+enable_testing ()
+add_subdirectory(tests)
 
 install(FILES depktcap.h DESTINATION include)
 install(FILES dpdkrflow.h DESTINATION include)
