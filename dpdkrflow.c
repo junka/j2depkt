@@ -606,10 +606,10 @@ static const char *tcpflags[] = {
     struct rte_flow_action_rss *rss =                                          \
         malloc(sizeof(struct rte_flow_action_rss));                            \
     act->conf = rss;                                                           \
-    rss->level = 2;                                                      \
-    rss->types = ETH_RSS_IPV4 | ETH_RSS_UDP | ETH_RSS_TCP;               \
-    rss->queue_num = integervalue(yytext);                               \
-    rss->queue = queues;                                                 \
+    rss->level = 2;                                                            \
+    rss->types = RTE_ETH_RSS_IPV4 | RTE_ETH_RSS_UDP | RTE_ETH_RSS_TCP;         \
+    rss->queue_num = integervalue(yytext);                                     \
+    rss->queue = queues;                                                       \
     yy->flows.naction++;                                                       \
   }
 #define YY_QUEUE(yy, yytext) \

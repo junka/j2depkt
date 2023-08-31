@@ -10,7 +10,7 @@
 static volatile bool force_quit;
 static struct rte_eth_conf port_conf = {
     .txmode = {
-        .mq_mode = ETH_MQ_TX_NONE,
+        .mq_mode = RTE_ETH_MQ_TX_NONE,
     },
 };
 static void signal_handler(int signum) {
@@ -71,8 +71,8 @@ int main(int argc, char *argv[]) {
   struct rte_eth_rxconf rxq_conf = devinfo.default_rxconf;
   struct rte_eth_txconf txq_conf = devinfo.default_txconf;
 
-  if (devinfo.rx_offload_capa & DEV_RX_OFFLOAD_RSS_HASH) {
-    port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_RSS_HASH;
+  if (devinfo.rx_offload_capa & RTE_ETH_RX_OFFLOAD_RSS_HASH) {
+    port_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_RSS_HASH;
   }
 
   ret = rte_eth_dev_configure(0, 4, 4, &port_conf);
