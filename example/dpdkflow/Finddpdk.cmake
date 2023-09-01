@@ -35,14 +35,11 @@
 find_package(PkgConfig)
 if(PKG_CONFIG_FOUND)
   set(save_PKG_CONFIG_PATH $ENV{PKG_CONFIG_PATH})
-  if(dpdk_ROOT)
-    set(ENV{PKG_CONFIG_PATH} "${dpdk_ROOT}/pkgconfig:$ENV{PKG_CONFIG_PATH}")
-  endif()
   pkg_check_modules(dpdk QUIET libdpdk)
   set(ENV{PKG_CONFIG_PATH} "${save_PKG_CONFIG_PATH}")
 endif()
 
-mark_as_advanced(dpdk_INCLUDE_DIRS dpdk_LIBRARIES dpdk_STATIC_LIBRARIES dpdk_LIBRARY_DIR)
+mark_as_advanced(dpdk_INCLUDE_DIRS dpdk_LIBRARIES dpdk_STATIC_LIBRARIES dpdk_LIBRARY_DIRS)
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(dpdk DEFAULT_MSG

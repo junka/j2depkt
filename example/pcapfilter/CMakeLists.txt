@@ -3,6 +3,7 @@ project(depktpcapfilter)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 find_package(PCAP REQUIRED)
+include_directories(${CMAKE_SOURCE_DIR})
 include_directories(${PCAP_INCLUDE_DIRS})
 
 add_executable(pcapfilter main.c)

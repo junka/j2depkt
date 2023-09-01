@@ -5,8 +5,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <rte_errno.h>
 #include <rte_ethdev.h>
+#include <rte_errno.h>
 
 #include "dpdkrflow.h"
 #include "utils.h"
