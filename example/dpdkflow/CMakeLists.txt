@@ -20,8 +20,6 @@ list(FILTER dpdk_dep_libs EXCLUDE REGEX "efa")
 list(FILTER dpdk_STATIC_LIBRARIES INCLUDE REGEX "\\.a$")
 
 add_executable(dpdkflow main.c)
-target_link_libraries(dpdkflow depkt_dpdk ${dpdk_STATIC_LIBRARIES} ${dpdk_dep_libs})
-target_link_options(dpdkflow
-INTERFACE
--Wl,--whole-archive ${dpdk_STATIC_LIBRARIES} -Wl,--no-whole-archive
-)
+
+target_link_libraries(dpdkflow PUBLIC depkt_dpdk ${dpdk_dep_libs} "-Wl,--whole-archive -l${dpdk_STATIC_LIBRARIES} -Wl,--no-whole-archive")
+#)

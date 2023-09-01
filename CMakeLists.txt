@@ -36,7 +36,7 @@ if (HAS_DPDK)
         INSTALL_COMMAND meson install
     )
 
-    include_directories(CMAKE_CURRENT_BINARY_DIR}/install/include)
+    include_directories(${CMAKE_CURRENT_BINARY_DIR}/install/include)
     add_library(depkt_dpdk dpdkrflow.c utils.c)
     add_dependencies(depkt_dpdk parser)
     add_dependencies(depkt_dpdk DPDKSubproject)
