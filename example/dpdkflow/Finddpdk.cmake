@@ -42,7 +42,7 @@ if(PKG_CONFIG_FOUND)
   set(ENV{PKG_CONFIG_PATH} "${save_PKG_CONFIG_PATH}")
 endif()
 
-mark_as_advanced(dpdk_INCLUDE_DIRS dpdk_LIBRARIES dpdk_STATIC_LIBRARIES dpdk_REQUIRES_PRIVATE)
+mark_as_advanced(dpdk_INCLUDE_DIRS dpdk_LIBRARIES dpdk_STATIC_LIBRARIES dpdk_LIBRARY_DIR)
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(dpdk DEFAULT_MSG
