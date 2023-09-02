@@ -12,6 +12,9 @@ static struct rte_eth_conf port_conf = {
     .txmode = {
         .mq_mode = RTE_ETH_MQ_TX_NONE,
     },
+    .rxmode = {
+        .mq_mode =RTE_ETH_MQ_RX_RSS,
+    },
 };
 static void signal_handler(int signum) {
   if (signum == SIGINT || signum == SIGTERM) {
@@ -23,7 +26,7 @@ static int pkt_main_loop(__rte_unused void *arg) {
   struct rte_mbuf *pkts_burst[32];
   struct rte_mbuf *m;
   unsigned i, j, nb_rx;
-
+  printf("Main loop....\n");
   while (!force_quit) {
     /* Read packet from RX queues. 8< */
     for (i = 0; i < 4; i++) {
@@ -33,13 +36,13 @@ static int pkt_main_loop(__rte_unused void *arg) {
       if (unlikely(nb_rx == 0))
         continue;
 
+      printf("rx %d pkts from queue %u\n", nb_rx, i);
       for (j = 0; j < nb_rx; j++) {
         m = pkts_burst[j];
         rte_prefetch0(rte_pktmbuf_mtod(m, void *));
         //drop all packet
         rte_pktmbuf_free(m);
       }
-      printf("rx %d pkts from queue %u\n", nb_rx, i);
     }
     /* >8 End of read packet from RX queues. */
   }
@@ -70,11 +73,9 @@ int main(int argc, char *argv[]) {
   }
   struct rte_eth_rxconf rxq_conf = devinfo.default_rxconf;
   struct rte_eth_txconf txq_conf = devinfo.default_txconf;
-
   if (devinfo.rx_offload_capa & RTE_ETH_RX_OFFLOAD_RSS_HASH) {
     port_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_RSS_HASH;
   }
-
   ret = rte_eth_dev_configure(0, 4, 4, &port_conf);
   if (ret < 0) {
     rte_exit(EXIT_FAILURE, "can not configure device\n");
@@ -112,7 +113,7 @@ int main(int argc, char *argv[]) {
       .priority = 2,
   };
   struct rte_flow *rflow = dpdkflow_compile(
-      0, &attr, "ETHER(type=0x800)/IP(proto=6)/UDP(dst=4789):RSS(queue=4)");
+      0, &attr, "ETHER(type=0x800)/IP(proto=17)/UDP(dst=4789):RSS(queue=4)");
   if (rflow == NULL) {
     rte_exit(EXIT_FAILURE, "fail to create flow\n");
   }

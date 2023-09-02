@@ -51,6 +51,7 @@ static void rflow_append(struct rflow *flows, enum rte_flow_item_type type,
   }
   flows->items[flows->nitem - 1] = item;
 }
+
 #define YY_PATTERN(yy, type, spec, mask)  \
  { rflow_append(&yy->flows, type, spec, mask); }
 
@@ -59,11 +60,13 @@ void alloc_specmask(void **specs, void **masks, int idx, size_t size)
   specs[idx] = calloc(1, size);
   masks[idx] = calloc(1, size);
 }
+
 #define YY_ETHER_START(yy)                                                     \
   {                                                                            \
     alloc_specmask(yy->spec, yy->mask, yy->layerid,                            \
                    sizeof(struct rte_flow_item_eth));                          \
   }
+
 #define YY_ETHER_MAC(yy, yytext, ifsrc)                                        \
   {                                                                            \
     unsigned char addr[ETH_ALEN];                                              \
@@ -79,6 +82,7 @@ void alloc_specmask(void **specs, void **masks, int idx, size_t size)
       memcpy(&eth_mask->dst, mask, ETH_ALEN);                                  \
     }                                                                          \
   }
+
 #define YY_ETHER_TYPE(yy, yytext)                                              \
   {                                                                            \
     struct rte_flow_item_eth *eth_spec = yy->spec[yy->layerid];                \
@@ -595,23 +599,27 @@ static const char *tcpflags[] = {
 #define YY_OSPF_AUTH(yy, yytext)
 #define YY_OSPF_END(yy)
 
+static uint16_t queues[32] = {
+    0, 1, 2, 3, 4, 5, 6, 7,
+    8, 9, 10, 11, 12, 13, 14, 15,
+    16, 17, 18, 19, 20, 21, 22, 23,
+    24, 25, 26, 27, 28, 29, 30, 31
+};
+
 #define YY_RSS(yy, yytext)                                                     \
   {                                                                            \
     struct rte_flow_action *act = &yy->flows.actions[yy->flows.naction];       \
-    uint16_t queues[32];                                                       \
-    for (int i = 0; i < 32; i++) {                                             \
-      queues[i] = i;                                                           \
-    }                                                                          \
     act->type = RTE_FLOW_ACTION_TYPE_RSS;                                      \
     struct rte_flow_action_rss *rss =                                          \
-        malloc(sizeof(struct rte_flow_action_rss));                            \
+        calloc(1, sizeof(struct rte_flow_action_rss));                         \
     act->conf = rss;                                                           \
-    rss->level = 2;                                                            \
-    rss->types = RTE_ETH_RSS_IPV4 | RTE_ETH_RSS_UDP | RTE_ETH_RSS_TCP;         \
+    rss->level = 1;                                                            \
+    rss->types = RTE_ETH_RSS_IP | RTE_ETH_RSS_UDP | RTE_ETH_RSS_TCP;           \
     rss->queue_num = integervalue(yytext);                                     \
     rss->queue = queues;                                                       \
     yy->flows.naction++;                                                       \
   }
+
 #define YY_QUEUE(yy, yytext) \
   { \
   }
@@ -659,7 +667,7 @@ struct rte_flow *dpdkflow_compile(uint16_t port_id,
     return NULL;
   }
   fclose(stream);
-  
+
   rflow_append(&ctx.flows, RTE_FLOW_ITEM_TYPE_END, NULL, NULL);
 
   struct rte_flow_action *act = &ctx.flows.actions[ctx.flows.naction];
@@ -670,13 +678,13 @@ struct rte_flow *dpdkflow_compile(uint16_t port_id,
   memset(&error, 0, sizeof(error));
   int ret = rte_flow_validate(port_id, attr, ctx.flows.items, ctx.flows.actions, &error);
   if (ret < 0) {
-    printf("error in the flow %s\n", rte_strerror(rte_errno));
+    printf("error in the flow (%s):%s\n", rte_strerror(rte_errno), error.message);
     return NULL;
   }
   memset(&error, 0, sizeof(error));
   struct rte_flow *f = rte_flow_create(port_id, attr, ctx.flows.items, ctx.flows.actions, &error);
   if (f == NULL) {
-    printf("fail to create flow %s\n", rte_strerror(rte_errno));
+    printf("fail to create flow (%s):%s\n", rte_strerror(rte_errno), error.message);
     return NULL;
   }
   free(ctx.flows.items);

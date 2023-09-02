@@ -201,3 +201,13 @@ TEST(parser, IPField) {
     EXPECT_EQ(parse_string("ETHER()/IP(csum=-1):SAMPLE"), 1);
     EXPECT_EQ(parse_string("ETHER()/IP(csum=0x8902):SAMPLE"), 0);
 }
+
+
+TEST(parser, actions) {
+    EXPECT_EQ(parse_string("ETHER(type=0x800)/IP(proto=6)/UDP(dst=4789):RSS(queue=4)"), 0);
+    EXPECT_EQ(parse_string("ETHER(type=0x800)/IP(proto=6):RSS(queue=-1)"), 1);
+    EXPECT_EQ(parse_string("ETHER(type=0x800)/IP(proto=6):RSS"), 0);
+    EXPECT_EQ(parse_string("ETHER(type=0x800)/IP(proto=6):SAMPLE"), 0);
+    EXPECT_EQ(parse_string("ETHER(type=0x800)/IP(proto=6):QUEUE(id=0)"), 0);
+    EXPECT_EQ(parse_string("ETHER(type=0x800)/IP(proto=6):QUEUE(id=-1)"), 1);
+}
