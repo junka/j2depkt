@@ -439,6 +439,8 @@ static const char *tcpflags[] = {
 #define YY_QUEUE(yy, yytext)
 #define YY_DROP(yy)
 #define YY_PORT(yy)
+#define YY_COUNT(yy, yytext)
+#define YY_MARK(yy, yytext)
 #define YY_SAMPLE(yy)                                                          \
   {                                                                            \
     YY_BPF(yy, (BPF_K | BPF_RET), 0, 0, 0x40000);                              \

@@ -630,7 +630,35 @@ static uint16_t queues[32] = {
     queue->index = integervalue(yytext);                                       \
     yy->flows.naction++;                                                       \
   }
-#define YY_DROP(yy)
+
+#define YY_DROP(yy)                                                            \
+  {                                                                            \
+    struct rte_flow_action *act = &yy->flows.actions[yy->flows.naction];       \
+    act->type = RTE_FLOW_ACTION_TYPE_DROP;                                     \
+    act->conf = NULL;                                                          \
+    yy->flows.naction++;                                                       \
+  }
+
+#define YY_COUNT(yy, yytext)                                                   \
+  {                                                                            \
+    struct rte_flow_action *act = &yy->flows.actions[yy->flows.naction];       \
+    act->type = RTE_FLOW_ACTION_TYPE_COUNT;                                    \
+    struct rte_flow_action_count *count =                                      \
+        calloc(1, sizeof(struct rte_flow_action_count));                       \
+    act->conf = count;                                                         \
+    count->id = integervalue(yytext);                                          \
+    yy->flows.naction++;                                                       \
+  }
+#define YY_MARK(yy, yytext)                                                    \
+  {                                                                            \
+    struct rte_flow_action *act = &yy->flows.actions[yy->flows.naction];       \
+    act->type = RTE_FLOW_ACTION_TYPE_MARK;                                     \
+    struct rte_flow_action_mark *mark =                                        \
+        calloc(1, sizeof(struct rte_flow_action_mark));                        \
+    act->conf = mark;                                                          \
+    mark->id = integervalue(yytext);                                           \
+    yy->flows.naction++;                                                       \
+  }
 #define YY_PORT(yy)
 #define YY_SAMPLE(yy)
 

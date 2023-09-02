@@ -14,23 +14,20 @@ So my goal is using [peg](https://www.piumarta.com/software/peg/) to implement a
 The packet pattern should be recognized by scapy. However it has limitations and is only a subset of what scapy supported. I did not test all of it in scapy.
 
 ```
-ETHER()/IP()/UDP()/VXLAN()/ETHER()/IP():RSS()/METER()/PORT()
+ETHER()/IP()/UDP()/VXLAN()/ETHER()/IP():RSS()/COUNT()
 ```
 It consists of patterns and actions with colon as a delimeter
 All possible pattern sytax could be :
 ```
-ANY
 ETHER()
 IP()
 ARP()
 IP6()
 TCP()
 UDP()
-IPIP()
 MPLS()
-VLAN()
+VXLAN()
 GRE()
-ARP()
 ... to be added.
 
 ```
@@ -55,3 +52,19 @@ To filter out a VXLAN packet with inner src ip. We can just
 tcpdump -i eth0 -nev ETHER()/IP()/UDP()/VXLAN()/ETHER()/IP(src=192.168.0.1):SAMPLE
 ```
 Like scapy does, some default values can be ignored by the rule.
+
+## how to build
+First we need install peg, which can be get from [peg](https://www.piumarta.com/software/peg/).
+``` 
+mkdir build && cd build
+cmake ..
+make
+```
+
+If build with DPDK,
+We will need meson > 0.53.
+```
+mkdir build && cd build
+cmake .. -DHAS_DPDK
+make
+```

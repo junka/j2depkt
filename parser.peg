@@ -44,12 +44,14 @@ Space           <- ' ' / '\t' / EOL
 EOL             <- '\r\n' / '\n' / '\r' / '\0'
 EOF             <- !.
 
-Action          <- 'RSS' (Open ( 'queue' EQUAL <bits8 (SLASH bits8)?> )* Close)?    { YY_RSS(yy, yytext); }
-                   / 'DROP'     { YY_DROP(yy); }
-                   / 'QUEUE' (Open ( 'id' EQUAL <bits8 (SLASH bits8)?> )* Close)?   { YY_QUEUE(yy, yytext); }
-                   / 'PORT'     { YY_PORT(yy); }
+Action          <- 'RSS' (Open ( 'queue' EQUAL <bits8 (SLASH bits8)?>)* Close)?    { YY_RSS(yy, yytext); }
+                   / 'DROP'                                                        { YY_DROP(yy); }
+                   / 'QUEUE' (Open ('id' EQUAL <bits8 (SLASH bits8)?>)* Close)?    { YY_QUEUE(yy, yytext); }
+                   / 'PORT'                                                        { YY_PORT(yy); }
+                   / 'COUNT'  (Open ('id' EQUAL <INTEGER (SLASH INTEGER)?>)* Close)?   { YY_COUNT(yy, yytext); }
                    / 'METER'
-                   / 'SAMPLE'   { YY_SAMPLE(yy); }
+                   / 'MARK' (Open ('id' EQUAL <INTEGER (SLASH INTEGER)?>)* Close)? { YY_MARK(yy, yytext); }
+                   / 'SAMPLE'                                                      { YY_SAMPLE(yy); }
 
 SEPT            <- SLASH Skip / OR
 

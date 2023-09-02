@@ -115,6 +115,8 @@ extern "C" {
 #define YY_DROP(yy)
 #define YY_PORT(yy)
 #define YY_SAMPLE(yy)
+#define YY_COUNT(yy, yytext)
+#define YY_MARK(yy, yytext)
 
 #include "../parser.c"
 
