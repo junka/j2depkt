@@ -117,6 +117,11 @@ int main(int argc, char *argv[]) {
   if (rflow == NULL) {
     rte_exit(EXIT_FAILURE, "fail to create flow\n");
   }
+  struct rte_flow *rflow2 = dpdkflow_compile(
+      0, &attr, "ETHER(type=0x800)/IP(proto=17)/UDP(dst=9981):QUEUE(id=2)");
+  if (rflow == NULL) {
+    rte_exit(EXIT_FAILURE, "fail to create flow\n");
+  }
 
   rte_eal_mp_remote_launch(pkt_main_loop, NULL, CALL_MAIN);
 

@@ -620,8 +620,15 @@ static uint16_t queues[32] = {
     yy->flows.naction++;                                                       \
   }
 
-#define YY_QUEUE(yy, yytext) \
-  { \
+#define YY_QUEUE(yy, yytext)                                                   \
+  {                                                                            \
+    struct rte_flow_action *act = &yy->flows.actions[yy->flows.naction];       \
+    act->type = RTE_FLOW_ACTION_TYPE_QUEUE;                                    \
+    struct rte_flow_action_queue *queue =                                      \
+        calloc(1, sizeof(struct rte_flow_action_queue));                       \
+    act->conf = queue;                                                         \
+    queue->index = integervalue(yytext);                                       \
+    yy->flows.naction++;                                                       \
   }
 #define YY_DROP(yy)
 #define YY_PORT(yy)
