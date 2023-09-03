@@ -20,7 +20,7 @@ extern "C" {
   FILE *stream;
 
 #define YY_VLAN_START(yy)
-#define YY_VLAN_TPID(yy, yytext)
+#define YY_VLAN_PROTO(yy, yytext)
 #define YY_VLAN_TAG(yy, yytext)
 #define YY_VLAN_END(yy)
 
@@ -109,6 +109,12 @@ extern "C" {
 #define YY_OSPF_FIELD4(yy, yytext, off)
 #define YY_OSPF_AUTH(yy, yytext)
 #define YY_OSPF_END(yy)
+
+#define YY_RAW_START(yy)
+#define YY_RAW_PATTERN(yy, yytext)
+#define YY_RAW_OFF(yy, yytext)
+#define YY_RAW_LEN(yy, yytext)
+#define YY_RAW_END(yy)
 
 #define YY_RSS(yy, yytext)
 #define YY_QUEUE(yy, yytext)

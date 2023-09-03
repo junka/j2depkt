@@ -103,8 +103,20 @@ void alloc_specmask(void **specs, void **masks, int idx, size_t size)
     alloc_specmask(yy->spec, yy->mask, yy->layerid,                            \
                    sizeof(struct rte_flow_item_vlan));                         \
   }
-#define YY_VLAN_TPID(yy, yytext)
-#define YY_VLAN_TAG(yy, yytext)
+#define YY_VLAN_PROTO(yy, yytext)                                              \
+  {                                                                            \
+    struct rte_flow_item_vlan *vlan_spec = yy->spec[yy->layerid];              \
+    struct rte_flow_item_vlan *vlan_mask = yy->mask[yy->layerid];              \
+    vlan_spec->hdr.eth_proto = integervalue(yytext);                           \
+    vlan_mask->hdr.eth_proto = 0xFFFF;                                         \
+  }
+#define YY_VLAN_TAG(yy, yytext)                                                \
+  {                                                                            \
+    struct rte_flow_item_vlan *vlan_spec = yy->spec[yy->layerid];              \
+    struct rte_flow_item_vlan *vlan_mask = yy->mask[yy->layerid];              \
+    vlan_spec->hdr.vlan_tci = integervalue(yytext);                            \
+    vlan_mask->hdr.vlan_tci = RTE_BE16(0x0FFF);                                \
+  }
 #define YY_VLAN_END(yy)                                                        \
   {                                                                            \
     struct rte_flow_item_vlan *vlan_spec = yy->spec[yy->layerid];              \
@@ -577,6 +589,53 @@ static const char *tcpflags[] = {
     struct rte_flow_item_mpls *mpls_spec = yy->spec[yy->layerid];              \
     struct rte_flow_item_mpls *mpls_mask = yy->mask[yy->layerid];              \
     YY_PATTERN(yy, RTE_FLOW_ITEM_TYPE_MPLS, mpls_spec, mpls_mask);             \
+    yy->layerid++;                                                             \
+  }
+
+#define YY_RAW_START(yy)                                                       \
+  {                                                                            \
+    alloc_specmask(yy->spec, yy->mask, yy->layerid,                            \
+                   sizeof(struct rte_flow_item_raw));                          \
+  }
+#define YY_RAW_PATTERN(yy, yytext)                                             \
+  {                                                                            \
+    struct rte_flow_item_raw *raw_spec = yy->spec[yy->layerid];                \
+    struct rte_flow_item_raw *raw_mask = yy->mask[yy->layerid];                \
+    raw_spec->pattern = malloc(strlen(yytext) + 1);                            \
+    memcpy((void *)(raw_spec->pattern), yytext, strlen(yytext) + 1);           \
+    raw_mask->pattern = malloc(strlen(yytext) + 1);                            \
+    memset((void *)(raw_mask->pattern), 0xFF, strlen(yytext));                   \
+    raw_spec->length = strlen(yytext);                                         \
+    raw_mask->length = 0xFFFF;                                                 \
+    raw_spec->relative = 1;                                                    \
+    raw_mask->relative = 1;                                                    \
+    raw_spec->search = 1;                                                      \
+    raw_mask->search = 1;                                                      \
+    raw_spec->limit = 0;                                                       \
+    raw_mask->limit = 0xFFFF;                                                  \
+  }
+#define YY_RAW_OFF(yy, yytext)                                                 \
+  {                                                                            \
+    struct rte_flow_item_raw *raw_spec = yy->spec[yy->layerid];                \
+    struct rte_flow_item_raw *raw_mask = yy->mask[yy->layerid];                \
+    raw_spec->offset = integervalue(yytext);                                   \
+    raw_mask->offset = 0xFFFFFFFF;                                             \
+  }
+#define YY_RAW_LEN(yy, yytext)                                                 \
+  {                                                                            \
+    struct rte_flow_item_raw *raw_spec = yy->spec[yy->layerid];                \
+    struct rte_flow_item_raw *raw_mask = yy->mask[yy->layerid];                \
+    if (raw_spec->length > integervalue(yytext)) {                             \
+      raw_spec->length = integervalue(yytext);                                 \
+      raw_mask->length = 0xFFFF;                                               \
+    }                                                                          \
+  }
+
+#define YY_RAW_END(yy)                                                         \
+  {                                                                            \
+    struct rte_flow_item_raw *raw_spec = yy->spec[yy->layerid];                \
+    struct rte_flow_item_raw *raw_mask = yy->mask[yy->layerid];                \
+    YY_PATTERN(yy, RTE_FLOW_ITEM_TYPE_RAW, raw_spec, raw_mask);                \
     yy->layerid++;                                                             \
   }
 

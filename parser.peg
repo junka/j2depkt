@@ -11,6 +11,8 @@ hex_    <- '_'? hex
 dec     <- [0-9]
 dec_    <- '_'? dec
 
+char    <- [0-9a-zA-Z]
+
 bin_int <- bin bin_*
 oct_int <- oct oct_*
 dec_int <- dec dec_*
@@ -48,14 +50,14 @@ Action          <- 'RSS' (Open ( 'queue' EQUAL <bits8 (SLASH bits8)?>)* Close)? 
                    / 'DROP'                                                        { YY_DROP(yy); }
                    / 'QUEUE' (Open ('id' EQUAL <bits8 (SLASH bits8)?>)* Close)?    { YY_QUEUE(yy, yytext); }
                    / 'PORT'                                                        { YY_PORT(yy); }
-                   / 'COUNT'  (Open ('id' EQUAL <INTEGER (SLASH INTEGER)?>)* Close)?   { YY_COUNT(yy, yytext); }
+                   / 'COUNT' (Open ('id' EQUAL <INTEGER (SLASH INTEGER)?>)* Close)?   { YY_COUNT(yy, yytext); }
                    / 'METER'
                    / 'MARK' (Open ('id' EQUAL <INTEGER (SLASH INTEGER)?>)* Close)? { YY_MARK(yy, yytext); }
                    / 'SAMPLE'                                                      { YY_SAMPLE(yy); }
 
 SEPT            <- SLASH Skip / OR
 
-Packet          <- ETHER_P / IP6_P / IP_P / UDP_P / TCP_P / VXLAN_P / GRE_P / VLAN_P / MPLS_P 
+Packet          <- ETHER_P / IP6_P / IP_P / UDP_P / TCP_P / VXLAN_P / GRE_P / VLAN_P / MPLS_P
                    / ANY_P / SCTP_P / ICMP6_P / ICMP_P / ARP_P / OSPF_P / GENEVE_P
 
 tcp_flags       <- 'syn' / 'fin' / 'rst' / 'ack' / 'push' / 'ece' / 'cwr' / 'urg'
@@ -110,7 +112,7 @@ TCP_P           <- 'TCP'                                                     { Y
                     )* Close)?                                               { YY_TCP_END(yy); }
 VLAN_P          <- 'VLAN'                                                    { YY_VLAN_START(yy); }
                     (Open (
-                    'tpid' EQUAL <bits16 (SLASH bits16)?> COMMA?             { YY_VLAN_TPID(yy, yytext); }
+                    'proto' EQUAL <bits16 (SLASH bits16)?> COMMA?            { YY_VLAN_PROTO(yy, yytext); }
                     / 'tag' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?          { YY_VLAN_TAG(yy, yytext); }
                     )* Close)?                                               { YY_VLAN_END(yy); }
 MPLS_P          <- 'MPLS'                                                    { YY_MPLS_START(yy); }
@@ -187,12 +189,19 @@ OSPF_P          <- "OSPF"                                                    { Y
                     / ('autype' EQUAL <bits16 (SLASH bits16)?> COMMA?)       { YY_OSPF_FIELD2(yy, yytext, 14); }
                     / ('auth' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)       { YY_OSPF_AUTH(yy, yytext); }
                     )* Close)?                                               { YY_OSPF_END(yy); }
-ANY_P           <- "ANY"        
+ANY_P           <- "ANY"
                     (Open (
                     ('off' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
                     / ('size' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
                     / ('value' EQUAL <INTEGER (SLASH INTEGER)?> COMMA?)
                     )* Close)?
+RAW_P           <- "RAW"                                                     { YY_RAW_START(yy); }
+                    (Open (
+                    ('pattern' EQUAL <char*> COMMA?)                         { YY_RAW_PATTERN(yy, yytext); }
+                    / ('off' EQUAL <INTEGER> COMMA?)                         { YY_RAW_OFF(yy, yytext); }
+                    / ('len' EQUAL <INTEGER> COMMA?)                         { YY_RAW_LEN(yy, yytext); }
+                    )* Close)?                                               { YY_RAW_END(yy); }
+
 
 macaddr         <- hex hex COLON hex hex COLON hex hex COLON hex hex COLON hex hex COLON hex hex Skip
 ipaddr          <- ip4seg DOT ip4seg DOT ip4seg DOT ip4seg Skip

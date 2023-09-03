@@ -9,6 +9,27 @@
 #include "depktcap.h"
 #include "utils.h"
 
+
+enum layer_type {
+  LAYER_RAW = 0,
+  LAYER_VLAN,
+  LAYER_ETHER,
+  LAYER_IP,
+  LAYER_IP6,
+  LAYER_UDP,
+  LAYER_TCP,
+  LAYER_VXLAN,
+  LAYER_GENEVE,
+  LAYER_OSPF,
+  LAYER_ICMP,
+  LAYER_ICMP6,
+  LAYER_ARP,
+  LAYER_SCTP,
+  LAYER_GRE,
+  LAYER_MPLS,
+};
+
+
 #define YY_CTX_LOCAL
 
 #define YY_INPUT(ctx, buf, result, max)                                        \
@@ -17,10 +38,18 @@
     result = (EOF == c) ? 0 : (*(buf) = c, 1);                                 \
   }
 
+struct layer {
+  uint16_t proto;
+  uint16_t len;
+  uint16_t off;
+  uint16_t ifnext;
+};
+
 #define YY_CTX_MEMBERS                                                         \
   struct bpf_program prog;                                                     \
   unsigned long offset;                                                        \
-  unsigned short prev_layer;                                                   \
+  struct layer stack[32];                                                      \
+  int n_layers;                                                                \
   FILE *stream;
 
 static uint32_t bpf_len = 1 << 4;
@@ -51,6 +80,46 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
   }
 }
 
+#define YY_PREV_PROTO(yy, ptype)                                               \
+  {                                                                            \
+    if (yy->n_layers > 0 && yy->stack[yy->n_layers - 1].ifnext == 0) {         \
+      switch (yy->stack[yy->n_layers - 1].proto) {                             \
+      case LAYER_VLAN:                                                         \
+        bpf_jmp_update(&yy->prog, 2);                                          \
+        YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0,                           \
+               yy->stack[yy->n_layers - 1].off + 2);                           \
+        YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, ptype);                  \
+        break;                                                                 \
+      case LAYER_ETHER:                                                        \
+        bpf_jmp_update(&yy->prog, 2);                                          \
+        YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0,                           \
+               yy->stack[yy->n_layers - 1].off + 12);                          \
+        YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, ptype);                  \
+        break;                                                                 \
+      case LAYER_IP:                                                           \
+        bpf_jmp_update(&yy->prog, 2);                                          \
+        YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0,                           \
+               yy->stack[yy->n_layers - 1].off + 9);                           \
+        YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, ptype);                  \
+        break;                                                                 \
+      case LAYER_IP6:                                                          \
+        bpf_jmp_update(&yy->prog, 2);                                          \
+        YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0,                           \
+               yy->stack[yy->n_layers - 1].off + 6);                           \
+        YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, ptype);                  \
+        break;                                                                 \
+      case LAYER_GRE:                                                          \
+        bpf_jmp_update(&yy->prog, 2);                                          \
+        YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0,                           \
+               yy->stack[yy->n_layers - 1].off + 2);                           \
+        YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, ptype);                  \
+        break;                                                                 \
+      default:                                                                 \
+        break;                                                                 \
+      }                                                                        \
+    }                                                                          \
+  }
+
 #define YY_BPF(yy, code, jt, jf, k)                                            \
   { bpf_append(&yy->prog, code, jt, jf, k); }
 
@@ -75,18 +144,38 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
   }
 
-#define YY_VLAN_START(yy)
-#define YY_VLAN_TPID(yy, yytext) YY_BITS16_VALUE(yy, yytext, yy->offset)
+#define YY_VLAN_START(yy)                                                      \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_VLAN;                                \
+    yy->stack[yy->n_layers].len = 4;                                           \
+    YY_PREV_PROTO(yy, 0x8100);                                                 \
+  }
+
+#define YY_VLAN_PROTO(yy, yytext)                                              \
+  {                                                                            \
+    YY_BITS16_VALUE(yy, yytext, yy->offset + 2);                               \
+    yy->stack[yy->n_layers].ifnext = 1;                                        \
+  }
 #define YY_VLAN_TAG(yy, yytext)                                                \
   {                                                                            \
     bpf_jmp_update(&yy->prog, 3);                                              \
-    YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset + 2);              \
+    YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset);                  \
     YY_BPF(yy, (BPF_AND | BPF_K | BPF_ALU), 0, 0, 0x0FFF);                     \
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
   }
-#define YY_VLAN_END(yy) yy->offset += 4;
+#define YY_VLAN_END(yy)                                                        \
+  {                                                                            \
+    yy->offset += 4;                                                           \
+    yy->n_layers++;                                                            \
+  }
 
-#define YY_ETHER_START(yy)
+#define YY_ETHER_START(yy)                                                     \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_ETHER;                               \
+    yy->stack[yy->n_layers].len = 14;                                          \
+  }
 #define YY_ETHER_MAC(yy, yytext, src)                                          \
   {                                                                            \
     unsigned char addr[ETH_ALEN];                                              \
@@ -102,10 +191,25 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, (addr[4] | addr[5] << 8));   \
   }
 
-#define YY_ETHER_TYPE(yy, yytext) YY_BITS16_VALUE(yy, yytext, yy->offset+12)
-#define YY_ETHER_END(yy) yy->offset += 14;
+#define YY_ETHER_TYPE(yy, yytext)                                              \
+  {                                                                            \
+    YY_BITS16_VALUE(yy, yytext, yy->offset + ETH_ALEN * 2);                    \
+    yy->stack[yy->n_layers].ifnext = 1;                                        \
+  }
 
-#define YY_IP_START(yy)
+#define YY_ETHER_END(yy)                                                       \
+  {                                                                            \
+    yy->offset += 14;                                                          \
+    yy->n_layers++;                                                            \
+  }
+
+#define YY_IP_START(yy)                                                        \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_IP;                                  \
+    yy->stack[yy->n_layers].len = 20;                                          \
+    YY_PREV_PROTO(yy, 0x0800);                                                 \
+  }
 
 #define YY_IP_ADDR(yy, yytext, src)                                            \
   {                                                                            \
@@ -128,25 +232,61 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
 #define YY_IP_FIELD2(yy, yytext, off)                                          \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
 #define YY_IP_FIELD1(yy, yytext, off)                                          \
-  YY_BITS8_VALUE(yy, yytext, yy->offset + off)
+  {                                                                            \
+    YY_BITS8_VALUE(yy, yytext, yy->offset + off);                              \
+    if (off == 9) {                                                            \
+      yy->stack[yy->n_layers].ifnext = 1;                                      \
+    }                                                                          \
+  }
 
-#define YY_IP_END(yy) yy->offset += 20
+#define YY_IP_END(yy)                                                          \
+  {                                                                            \
+    yy->offset += 20;                                                          \
+    yy->n_layers++;                                                            \
+  }
 
-#define YY_UDP_START(yy)
+#define YY_UDP_START(yy)                                                       \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_UDP;                                 \
+    yy->stack[yy->n_layers].len = 8;                                           \
+    YY_PREV_PROTO(yy, 17);                                                     \
+  }
 #define YY_UDP_FIELD(yy, yytext, off)                                          \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
-#define YY_UDP_END(yy) yy->offset += 8;
 
-#define YY_TCP_START(yy)
+#define YY_UDP_END(yy)                                                         \
+  {                                                                            \
+    yy->offset += 8;                                                           \
+    yy->n_layers++;                                                            \
+  }
+
+#define YY_TCP_START(yy)                                                       \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_TCP;                                 \
+    yy->stack[yy->n_layers].len = 20;                                          \
+    YY_PREV_PROTO(yy, 6);                                                      \
+  }
 #define YY_TCP_FIELD1(yy, yytext, off)                                         \
   YY_BITS8_VALUE(yy, yytext, yy->offset + off)
 #define YY_TCP_FIELD2(yy, yytext, off)                                         \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
 #define YY_TCP_FIELD4(yy, yytext, off)                                         \
   YY_BITS32_VALUE(yy, yytext, yy->offset + off)
-#define YY_TCP_END(yy) yy->offset += 20
+#define YY_TCP_END(yy)                                                         \
+  {                                                                            \
+    yy->offset += 20;                                                          \
+    yy->n_layers++;                                                            \
+  }
 
-#define YY_ARP_START(yy)
+#define YY_ARP_START(yy)                                                       \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_ARP;                                 \
+    yy->stack[yy->n_layers].len = 28;                                          \
+    YY_PREV_PROTO(yy, 0x0806);                                                 \
+  }
 #define YY_ARP_ADDR(yy, yytext, off)                                           \
   {                                                                            \
     uint32_t addr, mask;                                                       \
@@ -178,9 +318,18 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
   YY_BITS8_VALUE(yy, yytext, yy->offset + off)
 #define YY_ARP_FIELD2(yy, yytext, off)                                         \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
-#define YY_ARP_END(yy) yy->offset += 28
+#define YY_ARP_END(yy)                                                         \
+  {                                                                            \
+    yy->offset += 28;                                                          \
+    yy->n_layers++;                                                            \
+  }
 
-#define YY_VXLAN_START(yy)
+#define YY_VXLAN_START(yy)                                                     \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_VXLAN;                               \
+    yy->stack[yy->n_layers].len = 8;                                           \
+  }
 #define YY_VXLAN_FLAG(yy, yytext)                                              \
   {                                                                            \
     bpf_jmp_update(&yy->prog, 2);                                              \
@@ -196,9 +345,18 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
     YY_BPF(yy, (BPF_RSH | BPF_K | BPF_ALU), 0, 0, 8);                          \
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
   }
-#define YY_VXLAN_END(yy) yy->offset += 8
+#define YY_VXLAN_END(yy)                                                       \
+  {                                                                            \
+    yy->offset += 8;                                                           \
+    yy->n_layers++;                                                            \
+  }
 
-#define YY_GENEVE_START(yy)
+#define YY_GENEVE_START(yy)                                                    \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_GENEVE;                              \
+    yy->stack[yy->n_layers].len = 8;                                           \
+  }
 #define YY_GENEVE_VER(yy, yytext)                                              \
   {                                                                            \
     bpf_jmp_update(&yy->prog, 4);                                              \
@@ -221,6 +379,7 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
   {                                                                            \
     yy->offset += (8 + __);                                                    \
     __ = 0;                                                                    \
+    yy->n_layers++;                                                            \
   }
 
 #define YY_ANY_FIELD(yy, yytext, off, size)                                    \
@@ -230,30 +389,61 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
   }
 
-#define YY_ICMP_START(yy)
+#define YY_ICMP_START(yy)                                                      \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_ICMP;                                \
+    yy->stack[yy->n_layers].len = 8;                                           \
+  }
 #define YY_ICMP_FIELD1(yy, yytext, off)                                        \
   YY_BITS8_VALUE(yy, yytext, yy->offset + off)
 
 #define YY_ICMP_FIELD2(yy, yytext, off)                                        \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
-#define YY_ICMP_END(yy) yy->offset += 8
+#define YY_ICMP_END(yy)                                                        \
+  {                                                                            \
+    yy->offset += 8;                                                           \
+    yy->n_layers++;                                                            \
+  }
 
-#define YY_ICMP6_START(yy)
+#define YY_ICMP6_START(yy)                                                     \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_ICMP6;                               \
+    yy->stack[yy->n_layers].len = 8;                                           \
+  }
 #define YY_ICMP6_FIELD1(yy, yytext, off) YY_ICMP_FIELD1(yy, yytext, off)
 #define YY_ICMP6_FIELD2(yy, yytext, off) YY_ICMP_FIELD2(yy, yytext, off)
-#define YY_ICMP6_END(yy) yy->offset += 8
+#define YY_ICMP6_END(yy)                                                       \
+  {                                                                            \
+    yy->offset += 8;                                                           \
+    yy->n_layers++;                                                            \
+  }
 
-#define YY_SCTP_START(yy)
+#define YY_SCTP_START(yy)                                                      \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_SCTP;                                \
+    yy->stack[yy->n_layers].len = 12;                                          \
+  }
 #define YY_SCTP_FIELD2(yy, yytext, off)                                        \
   YY_BITS16_VALUE(yy, yytext, yy->offset + off)
 
 #define YY_SCTP_FIELD4(yy, yytext, off)                                        \
   YY_BITS32_VALUE(yy, yytext, yy->offset + off)
 #define YY_SCTP_END(yy)                                                        \
-  yy->offset += (12 + __);                                                     \
-  __ = 0;
+  {                                                                            \
+    yy->offset += (12 + __);                                                   \
+    __ = 0;                                                                    \
+    yy->n_layers++;                                                            \
+  }
 
-#define YY_MPLS_START(yy)
+#define YY_MPLS_START(yy)                                                      \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_MPLS;                                \
+    yy->stack[yy->n_layers].len = 4;                                           \
+  }
 #define YY_MPLS_LABEL(yy, yytext)                                              \
   {                                                                            \
     bpf_jmp_update(&yy->prog, 4);                                              \
@@ -281,9 +471,18 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
   }
 #define YY_MPLS_TTL(yy, yytext)                                                \
   YY_BITS8_VALUE(yy, yytext, yy->offset + 3)
-#define YY_MPLS_END(yy) yy->offset += 4;
+#define YY_MPLS_END(yy)                                                        \
+  {                                                                            \
+    yy->offset += 4;                                                           \
+    yy->n_layers++;                                                            \
+  }
 
-#define YY_GRE_START(yy)
+#define YY_GRE_START(yy)                                                       \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_GRE;                                 \
+    yy->stack[yy->n_layers].len = 4;                                           \
+  }
 #define YY_GRE_C(yy, yytext)                                                   \
   {                                                                            \
     bpf_jmp_update(&yy->prog, 4);                                              \
@@ -301,7 +500,11 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
   }
 
-#define YY_GRE_PROTO(yy, yytext) YY_BITS16_VALUE(yy, yytext, yy->offset + 2)
+#define YY_GRE_PROTO(yy, yytext)                                               \
+  {                                                                            \
+    YY_BITS16_VALUE(yy, yytext, yy->offset + 2);                               \
+    yy->stack[yy->n_layers].ifnext = 1;                                        \
+  }
 
 #define YY_GRE_CSUM(yy, yytext)                                                \
   {                                                                            \
@@ -314,10 +517,19 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
     __ = 4;                                                                   \
   }
 #define YY_GRE_END(yy)                                                         \
-  yy->offset += (4 + __);                                                      \
-  __ = 0;
+  {                                                                            \
+    yy->offset += (4 + __);                                                    \
+    __ = 0;                                                                    \
+    yy->n_layers++;                                                            \
+  }
 
-#define YY_IP6_START(yy)
+#define YY_IP6_START(yy)                                                       \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_IP6;                                 \
+    yy->stack[yy->n_layers].len = 40;                                          \
+    YY_PREV_PROTO(yy, 0x86dd);                                                 \
+  }
 #define YY_IP6_ADDR(yy, yytext, src)                                           \
   {                                                                            \
     uint32_t addr[4], mask[4];                                                 \
@@ -389,15 +601,25 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
     } else if (!strcmp(yytext, "nexthdr")) {                                   \
       YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0, yy->offset + 6);            \
       YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));     \
+      yy->stack[yy->n_layers].ifnext = 1;                                      \
     } else if (!strcmp(name, "hoplimit")) {                                    \
       bpf_jmp_update(&yy->prog, 2);                                            \
       YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0, yy->offset + 7);            \
       YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));     \
     }                                                                          \
   }
-#define YY_IP6_END(yy) yy->offset += 40
+#define YY_IP6_END(yy)                                                         \
+  {                                                                            \
+    yy->offset += 40;                                                          \
+    yy->n_layers++;                                                            \
+  }
 
-#define YY_OSPF_START(yy)
+#define YY_OSPF_START(yy)                                                      \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_OSPF;                                \
+    yy->stack[yy->n_layers].len = 24;                                          \
+  }
 #define YY_OSPF_FIELD1(yy, yytext, off)                                        \
   YY_BITS8_VALUE(yy, yytext, yy->offset + off)
 #define YY_OSPF_FIELD2(yy, yytext, off)                                        \
@@ -413,7 +635,11 @@ void bpf_jmp_update(struct bpf_program *bp, uint8_t delt) {
     YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset + 20);             \
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, integervalue(yytext));       \
   }
-#define YY_OSPF_END(yy) yy->offset += 24;
+#define YY_OSPF_END(yy)                                                        \
+  {                                                                            \
+    yy->offset += 24;                                                          \
+    yy->n_layers++;                                                            \
+  }
 
 static const char *tcpflags[] = {
     "fin", "syn", "rst", "psh", "ack", "urg", "ece", "cwr",
@@ -435,6 +661,47 @@ static const char *tcpflags[] = {
     YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, flag);                       \
   }
 
+#define YY_RAW_START(yy)                                                       \
+  {                                                                            \
+    yy->stack[yy->n_layers].off = yy->offset;                                  \
+    yy->stack[yy->n_layers].proto = LAYER_RAW;                                 \
+  }
+#define YY_RAW_PATTERN(yy, yytext)                                             \
+  {                                                                            \
+    int plen = strlen(yytext);                                                 \
+    int roff = 0;                                                              \
+    while (plen > 4) {                                                         \
+      bpf_jmp_update(&yy->prog, 2);                                            \
+      YY_BPF(yy, (BPF_ABS | BPF_W | BPF_LD), 0, 0, yy->offset + roff);         \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1,                            \
+             *(uint32_t *)(yytext + roff));                                    \
+      plen -= 4;                                                               \
+      roff += 4;                                                               \
+    }                                                                          \
+    if (plen > 2) {                                                            \
+      bpf_jmp_update(&yy->prog, 2);                                            \
+      YY_BPF(yy, (BPF_ABS | BPF_H | BPF_LD), 0, 0, yy->offset + roff);         \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1,                            \
+             *(uint16_t *)(yytext + roff));                                    \
+      plen -= 2;                                                               \
+      roff += 2;                                                               \
+    }                                                                          \
+    if (plen > 0) {                                                            \
+      bpf_jmp_update(&yy->prog, 2);                                            \
+      YY_BPF(yy, (BPF_ABS | BPF_B | BPF_LD), 0, 0, yy->offset + roff);         \
+      YY_BPF(yy, (BPF_JEQ | BPF_K | BPF_JMP), 0, 1, *(yytext + roff));         \
+      plen -= 1;                                                               \
+      roff += 1;                                                               \
+    }                                                                          \
+  }
+#define YY_RAW_OFF(yy, yytext)                                                 \
+  {                                                                            \
+    yy->offset += integervalue(yytext); \
+  }
+#define YY_RAW_LEN(yy, yytext)                                                 \
+  { yy->offset += integervalue(yytext); }
+#define YY_RAW_END(yy) {yy->n_layers++;}
+
 #define YY_RSS(yy, yytext)
 #define YY_QUEUE(yy, yytext)
 #define YY_DROP(yy)
@@ -446,7 +713,6 @@ static const char *tcpflags[] = {
     YY_BPF(yy, (BPF_K | BPF_RET), 0, 0, 0x40000);                              \
     YY_BPF(yy, BPF_K | BPF_RET, 0, 0, 0);                                      \
   }
-
 
 #include "parser.c"
 
@@ -473,7 +739,6 @@ void yyerror(yycontext *ctx, char *message) {
 
 int depkt_compile(char *capstr, struct bpf_program *prog)
 {
-  printf("%s\n", capstr);
   yycontext ctx;
   memset(&ctx, 0, sizeof(yycontext));
   FILE *stream = fmemopen(capstr, strlen(capstr), "r");
