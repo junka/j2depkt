@@ -58,7 +58,7 @@ Action          <- 'RSS' (Open ( 'queue' EQUAL <bits8 (SLASH bits8)?>)* Close)? 
 SEPT            <- SLASH Skip / OR
 
 Packet          <- ETHER_P / IP6_P / IP_P / UDP_P / TCP_P / VXLAN_P / GRE_P / VLAN_P / MPLS_P
-                   / ANY_P / SCTP_P / ICMP6_P / ICMP_P / ARP_P / OSPF_P / GENEVE_P
+                   / ANY_P / SCTP_P / ICMP6_P / ICMP_P / ARP_P / OSPF_P / GENEVE_P / RAW_P
 
 tcp_flags       <- 'syn' / 'fin' / 'rst' / 'ack' / 'push' / 'ece' / 'cwr' / 'urg'
 

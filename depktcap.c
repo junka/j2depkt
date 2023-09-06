@@ -742,10 +742,14 @@ int depkt_compile(char *capstr, struct bpf_program *prog)
   yycontext ctx;
   memset(&ctx, 0, sizeof(yycontext));
   FILE *stream = fmemopen(capstr, strlen(capstr), "r");
+  if (!stream) {
+    return -1;
+  }
   ctx.stream = stream;
   ctx.prog.bf_insns = malloc(bpf_len * sizeof(struct bpf_insn));
   if (yyparse(&ctx) == 0) {
     yyerror(&ctx, "syntax error\n");
+    fclose(stream);
     return -1;
   }
   fclose(stream);

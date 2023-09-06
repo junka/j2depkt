@@ -13,11 +13,17 @@ enable_testing()
 add_subdirectory(${GTEST_SOURCE_DIR})
 enable_testing()
 include_directories(${GTEST_SOURCE_DIR}/googletest/include)
+include_directories(${CMAKE_SOURCE_DIR})
 
 add_executable(parser_test  test_parser.cc)
 target_link_libraries(parser_test gtest gtest_main)
-
 add_test(NAME parser_test COMMAND parser_test)
+
+add_executable(pktbuilder_test test_pktbuilder.cc)
+target_link_libraries(pktbuilder_test depktbuild gtest gtest_main)
+add_test(NAME pktbuilder_test COMMAND pktbuilder_test)
+
+
 
 add_custom_target(pytest
     COMMAND ${CMAKE_CTEST_COMMAND} -R "pytest"

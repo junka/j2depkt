@@ -10,6 +10,7 @@ add_custom_command (
 )
 add_custom_target(parser DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/parser.c)
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_library(depkt depktcap.c utils.c)
 add_dependencies(depkt parser)
@@ -17,12 +18,17 @@ add_dependencies(depkt parser)
 add_subdirectory(example/pcapfilter)
 add_subdirectory(example/tcpdump)
 
+add_library(depktbuild depktbuilder.c utils.c)
+add_dependencies(depktbuild parser)
+
 enable_testing ()
 add_subdirectory(tests)
 
 install(FILES depktcap.h DESTINATION include)
 install(TARGETS depkt DESTINATION lib)
 
+install(FILES depktbuilder.h DESTINATION include)
+install(TARGETS depktbuild DESTINATION lib)
 
 
 if (HAS_DPDK)
