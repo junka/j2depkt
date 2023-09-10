@@ -75,9 +75,19 @@ static void* pkt_layer_push(void *pkt, int *pkt_len, int size) {
     unsigned char mask[ETH_ALEN];                                              \
     macstr2addr(yytext, addr, mask);                                           \
     if (src) {                                                                 \
-      memcpy(eth->h_source, addr, ETH_ALEN);                                   \
+      eth->h_source[0] = addr[5];                                              \
+      eth->h_source[1] = addr[4];                                              \
+      eth->h_source[2] = addr[3];                                              \
+      eth->h_source[3] = addr[2];                                              \
+      eth->h_source[4] = addr[1];                                              \
+      eth->h_source[5] = addr[0];                                              \
     } else {                                                                   \
-      memcpy(eth->h_dest, addr, ETH_ALEN);                                     \
+      eth->h_dest[0] = addr[5];                                                \
+      eth->h_dest[1] = addr[4];                                                \
+      eth->h_dest[2] = addr[3];                                                \
+      eth->h_dest[3] = addr[2];                                                \
+      eth->h_dest[4] = addr[1];                                                \
+      eth->h_dest[5] = addr[0];                                                \
     }                                                                          \
   }
 #define YY_ETHER_TYPE(yy, yytext)                                              \
